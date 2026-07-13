@@ -5,3 +5,4 @@ __pycache__/
 .ipynb_checkpoints/
 data/*.pkl
 data/attributes/
+data/dataset/
