@@ -15,6 +15,7 @@ import pickle
 import numpy as np
 import pandas as pd
 import segyio
+from scipy.ndimage import minimum_filter, uniform_filter
 from scipy.spatial import cKDTree
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -94,3 +95,74 @@ class HorizonSurface:
             return exact
         _, idx = self._tree.query([il, xl])
         return self._times[idx]
+
+
+def _find_structural_extrema(horizon_df, window, min_relief_ms, edge_margin, kind):
+    """Shared logic for find_structural_highs / find_structural_lows."""
+    grid = horizon_df.pivot_table(index='inline', columns='crossline', values='time_ms')
+    grid_inlines = grid.index.values
+    grid_xlines = grid.columns.values
+    values = grid.values
+
+    sign = 1 if kind == 'high' else -1  # highs = local minima in time; lows (synclines) = local maxima
+    fill_value = np.nanmax(sign * values) * sign
+    filled = np.where(np.isnan(values), fill_value, values)
+    scored = sign * filled
+
+    local_extreme = minimum_filter(scored, size=window, mode='nearest')
+    local_mean = uniform_filter(scored, size=window * 3, mode='nearest')
+    is_extreme = (scored == local_extreme) & (local_mean - scored >= min_relief_ms) & ~np.isnan(values)
+
+    is_extreme[:edge_margin] = False
+    is_extreme[-edge_margin:] = False
+    is_extreme[:, :edge_margin] = False
+    is_extreme[:, -edge_margin:] = False
+
+    rows, cols = np.where(is_extreme)
+    candidates = pd.DataFrame({
+        'inline': grid_inlines[rows],
+        'crossline': grid_xlines[cols],
+        'time_ms': filled[rows, cols],
+        'relief_ms': (local_mean - scored)[rows, cols],
+    }).sort_values('relief_ms', ascending=False).reset_index(drop=True)
+
+    # non-max suppression: nearby points on the same plateau shouldn't all show up as separate candidates
+    kept_rows, kept_coords = [], []
+    for _, row in candidates.iterrows():
+        coord = np.array([row['inline'], row['crossline']])
+        if all(np.linalg.norm(coord - k) > window for k in kept_coords):
+            kept_rows.append(row)
+            kept_coords.append(coord)
+    return pd.DataFrame(kept_rows).reset_index(drop=True)
+
+
+def find_structural_highs(horizon_df, window=25, min_relief_ms=10.0, edge_margin=40):
+    """
+    Local structural highs (shallowest points - local minima in time) on a
+    matched horizon surface: candidate trap locations for positive DHI
+    examples, since structural closures are where hydrocarbons actually
+    accumulate.
+
+    window: neighbourhood size (trace units) used to test for a local extremum.
+    min_relief_ms: minimum time difference from the local window average, to
+        filter out noise-level bumps that aren't real structural closures.
+    edge_margin: excludes candidates within this many traces of the matched
+        surface's edge, leaving room for a footprint + taper.
+
+    Returns DataFrame(inline, crossline, time_ms, relief_ms), most prominent first.
+    """
+    return _find_structural_extrema(horizon_df, window, min_relief_ms, edge_margin, kind='high')
+
+
+def find_structural_lows(horizon_df, window=25, min_relief_ms=10.0, edge_margin=40):
+    """
+    Local structural lows (deepest points - synclines) on a matched horizon
+    surface. Useful for a physically-motivated hard negative: a bright,
+    doublet-shaped, conformant reflection sitting in a syncline rather than
+    an anticline is not a valid hydrocarbon trap (fluids don't accumulate
+    there under normal buoyancy-driven trapping) despite an amplitude/
+    polarity signature identical to a true positive - see Nanda (2021)'s
+    point about flat spots needing the right structural position (cited in
+    the notebook's research notes).
+    """
+    return _find_structural_extrema(horizon_df, window, min_relief_ms, edge_margin, kind='low')

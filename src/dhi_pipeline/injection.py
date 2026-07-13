@@ -38,13 +38,16 @@ def _reflectivity_series(time_axis_ms, spikes):
 
 
 def _fine_wedge(top_time_ms, thickness_m, velocity_mps, reflection_coefficient, freq_hz,
-                 flat_spot_offset_ms=None, flat_spot_rc=None, dt_fine_ms=0.1, pad_ms=150):
+                 flat_spot_offset_ms=None, flat_spot_rc=None, include_base=True,
+                 dt_fine_ms=0.1, pad_ms=150):
     """Reflectivity + wavelet convolution on a fine time grid (shared core)."""
     twt_thickness_ms = thickness_to_twt_ms(thickness_m, velocity_mps)
     base_time_ms = top_time_ms + twt_thickness_ms
 
     fine_t = np.arange(top_time_ms - pad_ms, top_time_ms + twt_thickness_ms + pad_ms, dt_fine_ms)
-    spikes = [(top_time_ms, reflection_coefficient), (base_time_ms, -reflection_coefficient)]
+    spikes = [(top_time_ms, reflection_coefficient)]
+    if include_base:
+        spikes.append((base_time_ms, -reflection_coefficient))
     if flat_spot_offset_ms is not None:
         spikes.append((base_time_ms + flat_spot_offset_ms, flat_spot_rc))
     r_fine = _reflectivity_series(fine_t, spikes)
@@ -78,18 +81,22 @@ def wedge_peak_amplitude(thickness_m, velocity_mps, reflection_coefficient, freq
 
 def model_wedge_response(top_time_ms, thickness_m, velocity_mps, reflection_coefficient,
                           freq_hz, dt_ms, flat_spot_offset_ms=None, flat_spot_rc=None,
-                          dt_fine_ms=0.1, pad_ms=150):
+                          include_base=True, dt_fine_ms=0.1, pad_ms=150):
     """
     Band-limited seismic response of a reservoir wedge, resampled onto the
     trace's own sample interval (dt_ms) - use this for actually injecting
     onto a real trace. For validating tuning behaviour in the abstract, use
     `wedge_peak_amplitude` instead (see its docstring for why).
 
+    include_base=False drops the base-of-reservoir reflector, leaving a
+    single isolated event - mimics a single-interface look-alike (volcanic
+    flow top, coal bed, unconformity) rather than a genuine reservoir wedge.
+
     Returns (wedge_trace, time_axis_ms for that trace, twt_thickness_ms).
     """
     wedge_fine, fine_t, twt_thickness_ms = _fine_wedge(
         top_time_ms, thickness_m, velocity_mps, reflection_coefficient, freq_hz,
-        flat_spot_offset_ms, flat_spot_rc, dt_fine_ms, pad_ms,
+        flat_spot_offset_ms, flat_spot_rc, include_base, dt_fine_ms, pad_ms,
     )
     coarse_t = np.arange(top_time_ms - pad_ms, top_time_ms + twt_thickness_ms + pad_ms, dt_ms)
     wedge_coarse = np.interp(coarse_t, fine_t, wedge_fine)
@@ -113,8 +120,13 @@ def estimate_amplitude_scale(background_patch, reference_rc=0.05):
     plausible value for everyday shale/sand contrasts, well below a
     hydrocarbon-sand contrast like RC_GAS_SAND ~ -0.18). This is an
     approximation, not a measurement - flag it as such wherever it's used.
+
+    Uses nanmean: sub-volumes drawn from arbitrary survey locations can
+    contain missing traces (F3's acquisition outline isn't a perfect
+    rectangle), and a plain mean would let a handful of NaN traces poison
+    the entire calibration.
     """
-    rms_amplitude = np.sqrt(np.mean(background_patch ** 2))
+    rms_amplitude = np.sqrt(np.nanmean(background_patch ** 2))
     return rms_amplitude / reference_rc
 
 
@@ -174,9 +186,11 @@ def inject_dhi_anomaly(patch, time_axis_ms, xl_axis, top_time_ms, thickness_m, v
 
 def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_surface,
                            thickness_m, velocity_mps, reflection_coefficient, freq_hz,
-                           il_center, xl_center, il_radius, xl_radius, amplitude_scale=1.0,
-                           edge_taper_frac=0.2, flat_spot=False, flat_spot_offset_ms=15,
-                           polarity_reversal=False):
+                           il_center, xl_center, il_radius, xl_radius, rotation_deg=0.0,
+                           amplitude_scale=1.0, edge_taper_frac=0.2, flat_spot=False,
+                           flat_spot_offset_ms=15, polarity_reversal=False,
+                           horizon_time_offset_ms=0.0, single_reflector=False,
+                           flat_top_time_ms=None):
     """
     Add a synthetic reservoir-wedge response onto a 3D background volume,
     following a real horizon surface for structural conformance rather than
@@ -186,13 +200,26 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
     volume: (n_inlines, n_xlines, n_samples) raw amplitude - copied, not mutated.
     horizon_surface: a `HorizonSurface` (src/dhi_pipeline/horizons.py) giving
         real top_time_ms at any (il, xl) - the reservoir top follows its shape.
-    il_center/xl_center/il_radius/xl_radius: footprint is an axis-aligned
-        ellipse in (inline, crossline) space, centred at (il_center, xl_center).
+    il_center/xl_center/il_radius/xl_radius: footprint is an ellipse in
+        (inline, crossline) space, centred at (il_center, xl_center).
+    rotation_deg: rotates the ellipse's axes relative to the inline/crossline
+        grid (0 = il_radius along inline, xl_radius along crossline).
     edge_taper_frac: fraction of the footprint's outer radius (by normalised
         elliptical distance) that cosine-tapers to zero, so the footprint
         doesn't have a hard-edged boundary.
-    polarity_reversal: linearly flips RC sign across the crossline span of
-        the footprint (updip gas -> downdip water), as in Nanda (2021).
+    polarity_reversal: linearly flips RC sign across the footprint's local
+        (rotated) crossline-like axis (updip gas -> downdip water), as in
+        Nanda (2021).
+    horizon_time_offset_ms: constant shift applied to the horizon's time at
+        every point in the footprint - lets a scenario sit structurally
+        *below* a horizon (e.g. a syncline hard negative, see scenarios.py)
+        while still following its real shape. 0 = sit directly on the horizon.
+    single_reflector: drop the base-of-reservoir event, leaving one isolated
+        reflector - a non-conformant look-alike (volcanic/coal/unconformity)
+        rather than a genuine reservoir wedge.
+    flat_top_time_ms: if given, overrides the horizon entirely and uses this
+        constant time everywhere in the footprint - the "no structural
+        conformance at all" hard-negative case.
     (other params as `inject_dhi_anomaly`)
 
     Returns (out, twt_thickness_ms).
@@ -200,23 +227,32 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
     out = volume.copy()
     dt_ms = time_axis_ms[1] - time_axis_ms[0]
     twt_thickness_ms = thickness_to_twt_ms(thickness_m, velocity_mps)
+    theta = np.radians(rotation_deg)
 
     for i, il in enumerate(inline_axis):
         for j, xl in enumerate(xl_axis):
-            r = np.sqrt(((il - il_center) / il_radius) ** 2 + ((xl - xl_center) / xl_radius) ** 2)
+            d_il, d_xl = il - il_center, xl - xl_center
+            il_rot = d_il * np.cos(theta) + d_xl * np.sin(theta)
+            xl_rot = -d_il * np.sin(theta) + d_xl * np.cos(theta)
+            r = np.sqrt((il_rot / il_radius) ** 2 + (xl_rot / xl_radius) ** 2)
             if r > 1.0:
                 continue
 
             rc = reflection_coefficient
             if polarity_reversal:
-                frac = (xl - (xl_center - xl_radius)) / (2 * xl_radius)
+                frac = (xl_rot + xl_radius) / (2 * xl_radius)
                 rc = reflection_coefficient * (1 - 2 * np.clip(frac, 0, 1))
 
-            top_time_ms = horizon_surface.time_at(il, xl)
+            if flat_top_time_ms is not None:
+                top_time_ms = flat_top_time_ms
+            else:
+                top_time_ms = horizon_surface.time_at(il, xl) + horizon_time_offset_ms
+
             wedge, wedge_t, _ = model_wedge_response(
                 top_time_ms, thickness_m, velocity_mps, rc, freq_hz, dt_ms,
                 flat_spot_offset_ms=flat_spot_offset_ms if flat_spot else None,
                 flat_spot_rc=abs(reflection_coefficient) if flat_spot else None,
+                include_base=not single_reflector,
             )
 
             weight = 1.0
