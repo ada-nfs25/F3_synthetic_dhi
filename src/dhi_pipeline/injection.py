@@ -75,7 +75,8 @@ def wedge_peak_amplitude(thickness_m, velocity_mps, reflection_coefficient, freq
     and shifts its apparent peak location.
     """
     wedge_fine, _, _ = _fine_wedge(top_time_ms, thickness_m, velocity_mps, reflection_coefficient,
-                                    freq_hz, flat_spot_offset_ms, flat_spot_rc, dt_fine_ms, pad_ms)
+                                    freq_hz, flat_spot_offset_ms, flat_spot_rc,
+                                    dt_fine_ms=dt_fine_ms, pad_ms=pad_ms)
     return np.max(np.abs(wedge_fine))
 
 

@@ -23,7 +23,7 @@ from .attributes import compute_attribute_stack
 from .injection import inject_dhi_anomaly_3d, estimate_amplitude_scale
 from .scenarios import sample_positive_scenario, sample_hard_negative_scenario, TIER_RANGES
 
-HARD_NEGATIVE_KINDS = ['no_conformance', 'syncline', 'single_reflector']
+HARD_NEGATIVE_KINDS = ['no_conformance', 'syncline', 'single_reflector', 'tuning']
 
 
 def compute_footprint_mask(inline_axis, xl_axis, il_center, xl_center, il_radius, xl_radius, rotation_deg=0.0):

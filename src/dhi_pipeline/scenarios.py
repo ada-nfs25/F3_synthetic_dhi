@@ -19,7 +19,7 @@ Each sampler returns a plain dict of keyword arguments ready to pass to
 
 import numpy as np
 
-from .injection import RC_GAS_SAND
+from .injection import RC_GAS_SAND, RC_WATER_SAND
 
 # Continuous ranges per tier, centred on the fixed SEVERITY_TIERS values but
 # with real spread - a trained detector should see a continuum near each
@@ -98,23 +98,36 @@ def sample_hard_negative_scenario(kind, rng, structural_highs, structural_lows,
                            on a real structural high - mimics a volcanic
                            flow top, coal bed, or unconformity rather than
                            a genuine reservoir wedge.
+      'tuning'          - a genuine two-reflector wedge, conformant on a real
+                           structural high, but with a weak brine-sand
+                           contrast (RC_WATER_SAND) held at tuning thickness
+                           instead of a tier's gas-sand contrast. Constructive
+                           interference alone brightens it - no hydrocarbon
+                           contrast involved - so a detector keys off fluid
+                           contrast rather than "bright at tuning thickness".
 
-    Uses a random tier's amplitude/thickness regime so hard negatives span
-    the same severity range as positives, rather than always being maximally
-    obvious. Returns (injection_kwargs, label).
+    Uses a random tier's amplitude/thickness regime (except 'tuning', which
+    is pinned to tier3_at_tuning's thickness range by construction) so hard
+    negatives span the same severity range as positives, rather than always
+    being maximally obvious. Returns (injection_kwargs, label).
     """
-    tier_name = rng.choice(list(TIER_RANGES.keys()))
-    ranges = TIER_RANGES[tier_name]
-    thickness_m = rng.uniform(*ranges['thickness_range'])
-    rc_frac = rng.uniform(*ranges['rc_frac_range'])
+    if kind == 'tuning':
+        tier_name = 'tier3_at_tuning'
+        thickness_m = rng.uniform(*TIER_RANGES[tier_name]['thickness_range'])
+        reflection_coefficient = RC_WATER_SAND
+    else:
+        tier_name = rng.choice(list(TIER_RANGES.keys()))
+        ranges = TIER_RANGES[tier_name]
+        thickness_m = rng.uniform(*ranges['thickness_range'])
+        reflection_coefficient = RC_GAS_SAND * rng.uniform(*ranges['rc_frac_range'])
 
     base_kwargs = dict(
         velocity_mps=velocity_mps, freq_hz=freq_hz,
-        thickness_m=thickness_m, reflection_coefficient=RC_GAS_SAND * rc_frac,
+        thickness_m=thickness_m, reflection_coefficient=reflection_coefficient,
         **_sample_footprint(rng),
     )
     label = dict(is_dhi=False, kind=f'hard_negative_{kind}', tier=tier_name,
-                 thickness_m=thickness_m, reflection_coefficient=base_kwargs['reflection_coefficient'])
+                 thickness_m=thickness_m, reflection_coefficient=reflection_coefficient)
 
     if kind == 'no_conformance':
         if flat_background_time_ms is None:
@@ -133,6 +146,11 @@ def sample_hard_negative_scenario(kind, rng, structural_highs, structural_lows,
         site = structural_highs.iloc[rng.integers(len(structural_highs))]
         kwargs = dict(base_kwargs, il_center=site['inline'], xl_center=site['crossline'],
                       single_reflector=True)
+        label.update(il_center=site['inline'], xl_center=site['crossline'])
+
+    elif kind == 'tuning':
+        site = structural_highs.iloc[rng.integers(len(structural_highs))]
+        kwargs = dict(base_kwargs, il_center=site['inline'], xl_center=site['crossline'])
         label.update(il_center=site['inline'], xl_center=site['crossline'])
 
     else:
