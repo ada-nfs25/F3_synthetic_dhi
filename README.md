@@ -25,10 +25,3 @@ Reads directly from the F3 Demo 2023 dataset and Zenodo interpretation
 labels (paths hardcoded in the notebook, same locations as the companion
 IRP repo's `data/README.md`). `data/*.pkl` are regeneratable local caches
 (trace geometry, horizon coordinate lookup) - gitignored, not checked in.
-
-## Status
-Proof-of-concept stage: one location, one severity tier, verified against
-real data. Not yet built: randomised multi-location/multi-tier sampling,
-non-conformant hard negatives, spatial train/test partitioning, or a
-finalised patch+label dataset export - see the notebook's closing section
-for the planned next steps.
