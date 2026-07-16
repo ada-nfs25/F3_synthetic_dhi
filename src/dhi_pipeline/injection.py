@@ -266,19 +266,25 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
     return out, twt_thickness_ms
 
 
-# --- Petrophysics -> reflection coefficient (Nanda 2021, see notebook research cell) ---
-# Water sand: Vp=2300 m/s, rho=2.2 g/cc -> "impedance" 2300*2.2=5060
-# Gas sand:   Vp=1600 m/s, rho=2.1 g/cc -> "impedance" 1600*2.1=3360
-# (units cancel in the RC ratio, so V*rho in any consistent units is fine)
-# Overlying shale impedance isn't given in Nanda's qualitative example, so
-# 4800 is *assumed* here, chosen to reproduce the described pattern: weak
-# positive contrast for the brine sand, strong negative for the gas sand.
-Z_SHALE_ASSUMED = 4800
-Z_WATER_SAND = 2300 * 2.2
+# --- Petrophysics -> reflection coefficient ---
+# Z_SHALE_REAL / Z_WATER_SAND_REAL are measured, not assumed: pooled from real density
+# (RHOB), sonic (DT) and gamma-ray (GR) logs across all 4 F3 wells (F02-1, F03-2, F03-4,
+# F06-1) - see the "Checking these numbers against real F3 well logs" cell in
+# synthetic_dhi_generation.ipynb for the derivation (including two real bugs caught along
+# the way: coal contamination in a naive GR-only sand cutoff, and a units mismatch between
+# LAS sources). Sand facies = low GR *and* plausible clastic density (excludes coal);
+# shale = high GR. Values are the mean impedance (Vp[m/s] * RHOB[g/cc]) within each facies,
+# pooled across all 4 wells.
+Z_SHALE_REAL = 4588
+Z_WATER_SAND_REAL = 5599
+# No real gas-sand penetration exists in these wells (F3 Demo has no commercial discovery),
+# so gas sand keeps Nanda (2021)'s illustrative Vp=1600m/s, rho=2.1g/cc -> "impedance" 3360
+# (units cancel in the RC ratio, so V*rho in any consistent units is fine) - paired below
+# with the real shale impedance rather than an assumed one.
 Z_GAS_SAND = 1600 * 2.1
 
-RC_WATER_SAND = (Z_WATER_SAND - Z_SHALE_ASSUMED) / (Z_WATER_SAND + Z_SHALE_ASSUMED)
-RC_GAS_SAND = (Z_GAS_SAND - Z_SHALE_ASSUMED) / (Z_GAS_SAND + Z_SHALE_ASSUMED)
+RC_WATER_SAND = (Z_WATER_SAND_REAL - Z_SHALE_REAL) / (Z_WATER_SAND_REAL + Z_SHALE_REAL)
+RC_GAS_SAND = (Z_GAS_SAND - Z_SHALE_REAL) / (Z_GAS_SAND + Z_SHALE_REAL)
 
 # Severity tiers: thickness relative to tuning thickness is the primary axis;
 # reflection_coefficient is scaled as a fraction of the full gas-sand
