@@ -6,3 +6,4 @@ __pycache__/
 data/*.pkl
 data/attributes/
 data/dataset/
+data/segy_export/
