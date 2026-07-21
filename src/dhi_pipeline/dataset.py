@@ -88,7 +88,7 @@ def generate_example(kwargs, label, f, iline_map, inlines, xlines, horizon, dt_m
     # Hilbert transform can't handle NaN gaps (real survey-edge missing traces) - fill with 0
     # before computing attributes; the mask below is unaffected (footprint is a geometric property).
     injected_filled = np.nan_to_num(injected, nan=0.0)
-    attribute_stack = compute_attribute_stack(injected_filled)
+    attribute_stack = compute_attribute_stack(injected_filled).astype(np.float32)
 
     mask = compute_footprint_mask(patch_inline_axis, patch_xl_axis, il_center, xl_center,
                                    kwargs['il_radius'], kwargs['xl_radius'], kwargs.get('rotation_deg', 0.0))
