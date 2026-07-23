@@ -10,6 +10,10 @@ then resampled down to the trace's own sample interval. Building directly
 on the coarse trace grid would make beds thinner than one sample interval
 (true for tier 1 here - see synthetic_dhi_generation.ipynb) land their
 top/base spikes on the same sample and cancel to zero instead of tuning.
+
+`inject_dhi_anomaly_3d` also models the 'sag'/pull-down effect (Nanda 2021):
+the velocity drop within the gas-filled reservoir delays reflectors beneath
+it, via `sag_time_shift_ms`. Disable with apply_sag=False if not wanted.
 """
 
 import numpy as np
@@ -26,6 +30,16 @@ def ricker_wavelet(freq_hz, dt_s, length_ms=120):
 def thickness_to_twt_ms(thickness_m, velocity_mps):
     """True (one-way) thickness -> two-way travel-time thickness, in ms."""
     return 2000 * thickness_m / velocity_mps
+
+
+def sag_time_shift_ms(thickness_m, v_gas_mps, v_background_mps):
+    """
+    Extra two-way travel-time delay on reflectors below a gas-filled
+    reservoir, from the velocity drop within its thickness - Nanda (2021)'s
+    'sag'/pull-down effect. v_gas_mps < v_background_mps gives a positive
+    shift (later arrival, i.e. a downward 'sag' in time).
+    """
+    return 2000 * thickness_m * (1.0 / v_gas_mps - 1.0 / v_background_mps)
 
 
 def _reflectivity_series(time_axis_ms, spikes):
@@ -191,7 +205,7 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
                            amplitude_scale=1.0, edge_taper_frac=0.2, flat_spot=False,
                            flat_spot_offset_ms=15, polarity_reversal=False,
                            horizon_time_offset_ms=0.0, single_reflector=False,
-                           flat_top_time_ms=None):
+                           flat_top_time_ms=None, apply_sag=True, v_gas_mps=None):
     """
     Add a synthetic reservoir-wedge response onto a 3D background volume,
     following a real horizon surface for structural conformance rather than
@@ -221,13 +235,29 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
     flat_top_time_ms: if given, overrides the horizon entirely and uses this
         constant time everywhere in the footprint - the "no structural
         conformance at all" hard-negative case.
+    apply_sag: model the 'sag'/pull-down effect (Nanda 2021) - the velocity
+        drop within a gas-filled reservoir delays reflectors beneath it.
+        `velocity_mps` is treated as the real background velocity at that
+        location (it's normally interpolated from the real interval-velocity
+        log, see synthetic_dhi_generation.ipynb); `v_gas_mps` is the
+        anomalously slower velocity inside the gas zone itself. Shift is
+        tapered by the same footprint edge weight as the amplitude, so it
+        goes smoothly to zero rather than cutting off abruptly at the
+        footprint boundary.
+    v_gas_mps: gas-sand velocity used for the sag calculation above; defaults
+        to V_GAS_SAND (Nanda 2021's illustrative Vp=1600m/s, the same value
+        `Z_GAS_SAND` below is built from).
     (other params as `inject_dhi_anomaly`)
 
     Returns (out, twt_thickness_ms).
     """
+    if v_gas_mps is None:
+        v_gas_mps = V_GAS_SAND
+
     out = volume.copy()
     dt_ms = time_axis_ms[1] - time_axis_ms[0]
     twt_thickness_ms = thickness_to_twt_ms(thickness_m, velocity_mps)
+    sag_shift_ms = sag_time_shift_ms(thickness_m, v_gas_mps, velocity_mps) if apply_sag else 0.0
     theta = np.radians(rotation_deg)
 
     for i, il in enumerate(inline_axis):
@@ -263,6 +293,14 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
             in_range = (time_axis_ms >= wedge_t[0]) & (time_axis_ms <= wedge_t[-1])
             out[i, j, in_range] += weight * amplitude_scale * np.interp(time_axis_ms[in_range], wedge_t, wedge)
 
+            if apply_sag and sag_shift_ms != 0:
+                tapered_shift_ms = weight * sag_shift_ms
+                below_mask = time_axis_ms > wedge_t[-1]
+                if np.any(below_mask):
+                    out[i, j, below_mask] = np.interp(
+                        time_axis_ms[below_mask] - tapered_shift_ms, time_axis_ms, out[i, j, :]
+                    )
+
     return out, twt_thickness_ms
 
 
@@ -280,8 +318,12 @@ Z_WATER_SAND_REAL = 5599
 # No real gas-sand penetration exists in these wells (F3 Demo has no commercial discovery),
 # so gas sand keeps Nanda (2021)'s illustrative Vp=1600m/s, rho=2.1g/cc -> "impedance" 3360
 # (units cancel in the RC ratio, so V*rho in any consistent units is fine) - paired below
-# with the real shale impedance rather than an assumed one.
-Z_GAS_SAND = 1600 * 2.1
+# with the real shale impedance rather than an assumed one. V_GAS_SAND is also
+# sag_time_shift_ms()'s default gas velocity above - the same illustrative velocity drop
+# that produces the bright-spot impedance contrast is what produces the pull-down delay
+# beneath it.
+V_GAS_SAND = 1600  # m/s
+Z_GAS_SAND = V_GAS_SAND * 2.1
 
 RC_WATER_SAND = (Z_WATER_SAND_REAL - Z_SHALE_REAL) / (Z_WATER_SAND_REAL + Z_SHALE_REAL)
 RC_GAS_SAND = (Z_GAS_SAND - Z_SHALE_REAL) / (Z_GAS_SAND + Z_SHALE_REAL)
