@@ -20,7 +20,7 @@ import pandas as pd
 import segyio
 
 from .attributes import compute_attribute_stack
-from .injection import inject_dhi_anomaly_3d, estimate_amplitude_scale
+from .injection import inject_dhi_anomaly_3d, estimate_amplitude_scale, sag_time_shift_ms, V_GAS_SAND
 from .scenarios import sample_positive_scenario, sample_hard_negative_scenario, TIER_RANGES
 
 HARD_NEGATIVE_KINDS = ['no_conformance', 'syncline', 'single_reflector', 'tuning']
@@ -94,11 +94,19 @@ def generate_example(kwargs, label, f, iline_map, inlines, xlines, horizon, dt_m
                                    kwargs['il_radius'], kwargs['xl_radius'], kwargs.get('rotation_deg', 0.0))
 
     peak_amplitude = float(np.nanmax(np.abs(injected - raw_patch)))
+    # Ground truth for the sag/pull-down attribute (Nanda 2021) - mirrors inject_dhi_anomaly_3d's
+    # own internal calculation rather than changing its return signature. Applies uniformly
+    # across positives and hard negatives alike: sag depends on velocity contrast + thickness,
+    # both shared by hard negatives per their design (see scenarios.py), not on structural realism.
+    sag_shift_ms = (
+        sag_time_shift_ms(kwargs['thickness_m'], kwargs.get('v_gas_mps') or V_GAS_SAND, kwargs['velocity_mps'])
+        if kwargs.get('apply_sag', True) else 0.0
+    )
     full_label = dict(label, il_lo=il_lo, il_hi=il_hi, xl_lo=xl_lo, xl_hi=xl_hi,
                        center_time_ms=center_time_ms, twt_thickness_ms=twt_thickness_ms,
                        n_missing_traces=n_missing, peak_amplitude=peak_amplitude,
                        il_radius=kwargs['il_radius'], xl_radius=kwargs['xl_radius'],
-                       rotation_deg=kwargs.get('rotation_deg', 0.0))
+                       rotation_deg=kwargs.get('rotation_deg', 0.0), sag_shift_ms=sag_shift_ms)
     return dict(attribute_stack=attribute_stack, mask=mask, label=full_label)
 
 
