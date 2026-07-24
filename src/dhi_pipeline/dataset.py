@@ -50,8 +50,9 @@ def generate_example(kwargs, label, f, iline_map, inlines, xlines, horizon, dt_m
     Build one dataset example: reads a fixed-size patch directly from SEG-Y,
     injects the given scenario, computes the attribute stack + footprint mask.
 
-    Returns None if the patch would run off the survey's valid il/xl range
-    (kept simple: skip rather than pad, so every example has identical shape).
+    Returns None if the patch would run off the survey's valid il/xl range, or off
+    the survey's recorded time range (kept simple: skip rather than pad/truncate, so
+    every example has identical shape).
     """
     il_center, xl_center = kwargs['il_center'], kwargs['xl_center']
     center_time_ms = _scenario_center_time(kwargs, horizon)
@@ -59,6 +60,15 @@ def generate_example(kwargs, label, f, iline_map, inlines, xlines, horizon, dt_m
     il_lo, il_hi = int(il_center - il_extent // 2), int(il_center + il_extent // 2)
     xl_lo, xl_hi = int(xl_center - xl_extent // 2), int(xl_center + xl_extent // 2)
     if il_lo < inlines[0] or il_hi > inlines[-1] or xl_lo < xlines[0] or xl_hi > xlines[-1]:
+        return None
+
+    # same edge-skip logic as il/xl above, but for the time window - without this, a
+    # center_time_ms near the start/end of the recording silently produced a shorter-than-
+    # requested time_extent_ms window instead of being skipped. That was a real confound:
+    # hard_negative_syncline was clipped 87.5% of the time vs 0% for no_conformance, since
+    # synclines sit at structural lows (deeper -> later in the recording -> more likely clipped).
+    t_lo_ms, t_hi_ms = center_time_ms - time_extent_ms / 2, center_time_ms + time_extent_ms / 2
+    if t_lo_ms < f.samples[0] or t_hi_ms > f.samples[-1]:
         return None
 
     patch_inline_axis = np.arange(il_lo, il_hi)
