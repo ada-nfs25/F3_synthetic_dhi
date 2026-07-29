@@ -404,16 +404,26 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
             if r > 1 - edge_taper_frac:
                 weight = 0.5 * (1 + np.cos(np.pi * (r - (1 - edge_taper_frac)) / edge_taper_frac))
 
-            in_range = (time_axis_ms >= wedge_t[0]) & (time_axis_ms <= wedge_t[-1])
-            out[i, j, in_range] += weight * amplitude_scale * np.interp(time_axis_ms[in_range], wedge_t, wedge)
-
+            # F3: apply the sag to the clean background first, then add the
+            # wedge on top. Onset is the reservoir base itself
+            # (top_time_ms + twt_thickness_ms), not wedge_t[-1] - the latter
+            # carries _fine_wedge's pad_ms (and now, since F1, however far the
+            # contact extends it too), which put the onset ~148ms too deep in
+            # the review's repro and left an un-shifted gap directly beneath
+            # the gas. Reading from `volume` (untouched) rather than `out`
+            # (which would already contain the wedge by this point, were the
+            # order not swapped) avoids re-shifting part of the wedge itself.
             if apply_sag and sag_shift_ms != 0:
                 tapered_shift_ms = weight * sag_shift_ms
-                below_mask = time_axis_ms > wedge_t[-1]
+                reservoir_base_ms = top_time_ms + twt_thickness_ms
+                below_mask = time_axis_ms > reservoir_base_ms
                 if np.any(below_mask):
                     out[i, j, below_mask] = np.interp(
-                        time_axis_ms[below_mask] - tapered_shift_ms, time_axis_ms, out[i, j, :]
+                        time_axis_ms[below_mask] - tapered_shift_ms, time_axis_ms, volume[i, j, :]
                     )
+
+            in_range = (time_axis_ms >= wedge_t[0]) & (time_axis_ms <= wedge_t[-1])
+            out[i, j, in_range] += weight * amplitude_scale * np.interp(time_axis_ms[in_range], wedge_t, wedge)
 
     return out, twt_thickness_ms
 
