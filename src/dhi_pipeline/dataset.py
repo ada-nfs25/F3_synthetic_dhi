@@ -127,7 +127,8 @@ def generate_example(kwargs, label, cached_subvol, cache_inline_axis, cache_xl_a
     # Hilbert transform can't handle NaN gaps (real survey-edge missing traces) - fill with 0
     # before computing attributes; the mask below is unaffected (footprint is a geometric property).
     injected_filled = np.nan_to_num(injected, nan=0.0)
-    attribute_stack = compute_attribute_stack(injected_filled).astype(np.float32)
+    attribute_stack, channel_names = compute_attribute_stack(injected_filled, dt_ms / 1000.0)
+    attribute_stack = attribute_stack.astype(np.float32)
 
     mask = compute_footprint_mask(patch_inline_axis, patch_xl_axis, il_center, xl_center,
                                    kwargs['il_radius'], kwargs['xl_radius'], kwargs.get('rotation_deg', 0.0))
@@ -146,7 +147,7 @@ def generate_example(kwargs, label, cached_subvol, cache_inline_axis, cache_xl_a
                        n_missing_traces=n_missing, peak_amplitude=peak_amplitude,
                        il_radius=kwargs['il_radius'], xl_radius=kwargs['xl_radius'],
                        rotation_deg=kwargs.get('rotation_deg', 0.0), sag_shift_ms=sag_shift_ms)
-    return dict(attribute_stack=attribute_stack, mask=mask, label=full_label), None
+    return dict(attribute_stack=attribute_stack, channel_names=channel_names, mask=mask, label=full_label), None
 
 
 def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
@@ -244,7 +245,9 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
 
                 fname = f'example_{example_id:04d}.npz'
                 np.savez_compressed(os.path.join(patches_dir, fname),
-                                     attribute_stack=result['attribute_stack'], mask=result['mask'])
+                                     attribute_stack=result['attribute_stack'],
+                                     channel_names=np.array(result['channel_names']),
+                                     mask=result['mask'])
                 row = dict(result['label'], example_id=example_id, split=split_name, patch_file=fname)
                 rows.append(row)
                 example_id += 1
