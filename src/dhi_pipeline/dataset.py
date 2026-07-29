@@ -14,6 +14,7 @@ during training-set generation.
 """
 
 import os
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -44,23 +45,52 @@ def _scenario_center_time(kwargs, horizon):
     return horizon.time_at(kwargs['il_center'], kwargs['xl_center']) + kwargs.get('horizon_time_offset_ms', 0.0)
 
 
-def generate_example(kwargs, label, f, iline_map, inlines, xlines, horizon, dt_ms,
-                      il_extent=160, xl_extent=160, time_extent_ms=500, reference_rc=0.05):
+def _read_subvolume(f, iline_map, inline_axis, xl_axis, n_samples):
     """
-    Build one dataset example: reads a fixed-size patch directly from SEG-Y,
+    Read a full (inline, crossline, time) sub-volume from SEG-Y in one pass,
+    NaN where a trace is missing (F3's acquisition outline isn't a perfect
+    rectangle) - F10. Same approach as utils/seismic_io.read_subvolume,
+    duplicated here rather than imported, so dhi_pipeline doesn't pick up a
+    dependency on the separate top-level utils package.
+    """
+    out = np.full((len(inline_axis), len(xl_axis), n_samples), np.nan)
+    for i, il in enumerate(inline_axis):
+        for j, xl in enumerate(xl_axis):
+            idx = iline_map.get((int(il), int(xl)))
+            if idx is not None:
+                out[i, j] = f.trace[idx]
+    return out
+
+
+def generate_example(kwargs, label, cached_subvol, cache_inline_axis, cache_xl_axis, samples_ms,
+                      horizon, dt_ms, il_extent=160, xl_extent=160, time_extent_ms=500, reference_rc=0.05):
+    """
+    Build one dataset example: slices a fixed-size patch out of a pre-cached
+    sub-volume (F10 - see `_read_subvolume`/`build_dataset`, which reads the
+    working sub-volume from SEG-Y once per split rather than per example),
     injects the given scenario, computes the attribute stack + footprint mask.
 
-    Returns None if the patch would run off the survey's valid il/xl range, or off
-    the survey's recorded time range (kept simple: skip rather than pad/truncate, so
-    every example has identical shape).
+    cached_subvol: (n_cache_inlines, n_cache_xlines, n_samples) array already
+        read from SEG-Y for this split - see build_dataset.
+    cache_inline_axis/cache_xl_axis: the actual inline/crossline values
+        cached_subvol's first two axes correspond to (consecutive integers),
+        used to convert a patch's absolute il/xl range into an offset into
+        cached_subvol.
+
+    Returns (None, skip_reason) if the patch would run off the cached sub-volume's
+    il/xl range, or off the survey's recorded time range (kept simple: skip rather
+    than pad/truncate, so every example has identical shape) - skip_reason is
+    'il_xl_bounds' or 'time_bounds', so a run with many skips is diagnosable (F9).
+    Returns (result_dict, None) on success.
     """
     il_center, xl_center = kwargs['il_center'], kwargs['xl_center']
     center_time_ms = _scenario_center_time(kwargs, horizon)
 
     il_lo, il_hi = int(il_center - il_extent // 2), int(il_center + il_extent // 2)
     xl_lo, xl_hi = int(xl_center - xl_extent // 2), int(xl_center + xl_extent // 2)
-    if il_lo < inlines[0] or il_hi > inlines[-1] or xl_lo < xlines[0] or xl_hi > xlines[-1]:
-        return None
+    if il_lo < cache_inline_axis[0] or il_hi > cache_inline_axis[-1] or \
+       xl_lo < cache_xl_axis[0] or xl_hi > cache_xl_axis[-1]:
+        return None, 'il_xl_bounds'
 
     # same edge-skip logic as il/xl above, but for the time window - without this, a
     # center_time_ms near the start/end of the recording silently produced a shorter-than-
@@ -68,22 +98,21 @@ def generate_example(kwargs, label, f, iline_map, inlines, xlines, horizon, dt_m
     # hard_negative_syncline was clipped 87.5% of the time vs 0% for no_conformance, since
     # synclines sit at structural lows (deeper -> later in the recording -> more likely clipped).
     t_lo_ms, t_hi_ms = center_time_ms - time_extent_ms / 2, center_time_ms + time_extent_ms / 2
-    if t_lo_ms < f.samples[0] or t_hi_ms > f.samples[-1]:
-        return None
+    if t_lo_ms < samples_ms[0] or t_hi_ms > samples_ms[-1]:
+        return None, 'time_bounds'
 
     patch_inline_axis = np.arange(il_lo, il_hi)
     patch_xl_axis = np.arange(xl_lo, xl_hi)
 
-    n_samples = f.samples.size
-    raw = np.full((len(patch_inline_axis), len(patch_xl_axis), n_samples), np.nan)
-    for i, il in enumerate(patch_inline_axis):
-        for j, xl in enumerate(patch_xl_axis):
-            idx = iline_map.get((int(il), int(xl)))
-            if idx is not None:
-                raw[i, j] = f.trace[idx]
-    n_missing = int(np.isnan(raw).sum() // n_samples)
+    # F10: slice directly out of the pre-cached sub-volume instead of re-reading
+    # from SEG-Y per voxel - cache_inline_axis[0]/cache_xl_axis[0] are the cache's
+    # own origin, so the patch's array offset is just relative to that.
+    il_off = il_lo - cache_inline_axis[0]
+    xl_off = xl_lo - cache_xl_axis[0]
+    raw = cached_subvol[il_off:il_off + len(patch_inline_axis), xl_off:xl_off + len(patch_xl_axis), :]
+    n_missing = int(np.isnan(raw).sum() // samples_ms.size)
 
-    full_time_axis_ms = f.samples.astype(float)
+    full_time_axis_ms = samples_ms
     t_mask = (full_time_axis_ms >= center_time_ms - time_extent_ms / 2) & \
              (full_time_axis_ms <= center_time_ms + time_extent_ms / 2)
     patch_time_axis_ms = full_time_axis_ms[t_mask]
@@ -117,13 +146,14 @@ def generate_example(kwargs, label, f, iline_map, inlines, xlines, horizon, dt_m
                        n_missing_traces=n_missing, peak_amplitude=peak_amplitude,
                        il_radius=kwargs['il_radius'], xl_radius=kwargs['xl_radius'],
                        rotation_deg=kwargs.get('rotation_deg', 0.0), sag_shift_ms=sag_shift_ms)
-    return dict(attribute_stack=attribute_stack, mask=mask, label=full_label)
+    return dict(attribute_stack=attribute_stack, mask=mask, label=full_label), None
 
 
 def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
                    dt_ms, velocity_mps, freq_hz, train_inline_range, test_inline_range,
                    structural_highs, structural_lows, n_per_tier=3, n_hard_negatives_per_kind=3,
-                   seed=0, il_extent=160, xl_extent=160, time_extent_ms=500):
+                   seed=0, il_extent=160, xl_extent=160, time_extent_ms=500,
+                   max_skip_rate=0.5):
     """
     Generate a full patch+label dataset: n_per_tier positive examples per
     severity tier, n_hard_negatives_per_kind per hard-negative type, for
@@ -133,7 +163,29 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
 
     Writes one .npz per example to `{output_dir}/patches/`, and a combined
     labels table to `{output_dir}/labels.parquet`. Returns the labels DataFrame.
+
+    F9: validates up front that `inlines`/`xlines` can hold at least one
+    patch (a volume narrower than il_extent/xl_extent means every scenario
+    would be silently skipped, and previously this function would finish
+    "successfully" with an empty labels table and no error). Also raises if
+    the run produces zero examples, and warns if more than `max_skip_rate`
+    of scenarios were skipped - both report the skip-reason breakdown
+    (il/xl bounds vs time bounds) so a partial run is diagnosable.
+
+    F10: reads the working sub-volume for each split into memory once
+    (`_read_subvolume`), rather than re-reading the same overlapping traces
+    from SEG-Y for every example - see `generate_example`.
     """
+    valid_il_band = len(inlines) - il_extent
+    valid_xl_band = len(xlines) - xl_extent
+    if valid_il_band <= 0 or valid_xl_band <= 0:
+        raise ValueError(
+            f'working volume too small to hold any patch: {len(inlines)} inlines x {len(xlines)} '
+            f'crosslines available, but il_extent={il_extent}/xl_extent={xl_extent} need a valid '
+            f'centre band > 0 (available: {valid_il_band} x {valid_xl_band}). At least '
+            f'{il_extent + 1} inlines and {xl_extent + 1} crosslines are needed.'
+        )
+
     patches_dir = os.path.join(output_dir, 'patches')
     os.makedirs(patches_dir, exist_ok=True)
     rng = np.random.default_rng(seed)
@@ -141,8 +193,10 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
     splits = {'train': train_inline_range, 'test': test_inline_range}
     rows = []
     example_id = 0
+    skip_counts = {}
 
     with segyio.open(segy_path, ignore_geometry=True) as f:
+        samples_ms = f.samples.astype(float)
         for split_name, (il_lo, il_hi) in splits.items():
             split_highs = structural_highs[structural_highs.inline.between(il_lo, il_hi)].reset_index(drop=True)
             split_lows = structural_lows[structural_lows.inline.between(il_lo, il_hi)].reset_index(drop=True)
@@ -162,11 +216,31 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
                         flat_background_time_ms=1400,
                     ))
 
+            # F10: read this split's working sub-volume once - the union of every
+            # sampled scenario's patch, clipped to the survey's actual valid range -
+            # rather than re-reading the same overlapping traces per example. Only
+            # ~13 usable structural highs means patches overlap heavily across the
+            # ~190 examples in a run, so this turns millions of repeated random
+            # SEG-Y trace reads into one sequential pass.
+            il_centers = [kwargs['il_center'] for kwargs, _ in scenarios]
+            xl_centers = [kwargs['xl_center'] for kwargs, _ in scenarios]
+            cache_il_lo = max(inlines[0], int(min(il_centers) - il_extent // 2))
+            cache_il_hi = min(inlines[-1], int(max(il_centers) + il_extent // 2))
+            cache_xl_lo = max(xlines[0], int(min(xl_centers) - xl_extent // 2))
+            cache_xl_hi = min(xlines[-1], int(max(xl_centers) + xl_extent // 2))
+            cache_inline_axis = np.arange(cache_il_lo, cache_il_hi + 1)
+            cache_xl_axis = np.arange(cache_xl_lo, cache_xl_hi + 1)
+            cached_subvol = _read_subvolume(f, iline_map, cache_inline_axis, cache_xl_axis, samples_ms.size)
+
+            skip_counts[split_name] = {'il_xl_bounds': 0, 'time_bounds': 0}
             for kwargs, label in scenarios:
-                result = generate_example(kwargs, label, f, iline_map, inlines, xlines, horizon, dt_ms,
-                                           il_extent, xl_extent, time_extent_ms)
+                result, skip_reason = generate_example(
+                    kwargs, label, cached_subvol, cache_inline_axis, cache_xl_axis, samples_ms,
+                    horizon, dt_ms, il_extent, xl_extent, time_extent_ms,
+                )
                 if result is None:
-                    continue  # patch ran off the survey edge - skip rather than pad
+                    skip_counts[split_name][skip_reason] += 1  # F9: track *why*, not just *that*
+                    continue
 
                 fname = f'example_{example_id:04d}.npz'
                 np.savez_compressed(os.path.join(patches_dir, fname),
@@ -176,5 +250,18 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
                 example_id += 1
 
     labels = pd.DataFrame(rows)
+
+    # F9: a mostly- or fully-skipped run finishing "successfully" with an empty
+    # or tiny labels table is exactly the silent failure this guards against.
+    total_skipped = sum(sum(counts.values()) for counts in skip_counts.values())
+    total_scenarios = example_id + total_skipped
+    if len(labels) == 0:
+        raise RuntimeError(f'build_dataset produced zero examples - every scenario was skipped. '
+                            f'Skip reasons by split: {skip_counts}')
+    skip_rate = total_skipped / total_scenarios if total_scenarios else 0.0
+    if skip_rate > max_skip_rate:
+        warnings.warn(f'{skip_rate:.0%} of scenarios were skipped ({example_id}/{total_scenarios} kept, '
+                       f'threshold {max_skip_rate:.0%}). Skip reasons by split: {skip_counts}')
+
     labels.to_parquet(os.path.join(output_dir, 'labels.parquet'), index=False)
     return labels
