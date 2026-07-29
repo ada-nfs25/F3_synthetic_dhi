@@ -52,18 +52,33 @@ def _reflectivity_series(time_axis_ms, spikes):
 
 
 def _fine_wedge(top_time_ms, thickness_m, velocity_mps, reflection_coefficient, freq_hz,
-                 flat_spot_offset_ms=None, flat_spot_rc=None, include_base=True,
+                 contact_time_ms=None, flat_spot_rc=None, include_base=True,
                  dt_fine_ms=0.1, pad_ms=150):
-    """Reflectivity + wavelet convolution on a fine time grid (shared core)."""
+    """Reflectivity + wavelet convolution on a fine time grid (shared core).
+
+    contact_time_ms: absolute two-way time of the fluid contact (flat spot) -
+    the same value regardless of top_time_ms, which is what makes it "flat"
+    against a dipping top (replaces the old flat_spot_offset_ms, which was
+    measured from base_time_ms and so dipped with the structure - see F1).
+    Only emitted when top_time_ms < contact_time_ms (updip / gas leg);
+    downdip of the contact there is no gas, so no flat-spot event at all.
+    """
     twt_thickness_ms = thickness_to_twt_ms(thickness_m, velocity_mps)
     base_time_ms = top_time_ms + twt_thickness_ms
 
-    fine_t = np.arange(top_time_ms - pad_ms, top_time_ms + twt_thickness_ms + pad_ms, dt_fine_ms)
+    # extend the fine grid to cover the contact too, if it sits deeper than
+    # the reservoir base + pad - otherwise a contact far below the base would
+    # fall outside fine_t and its spike would silently vanish
+    fine_t_hi = top_time_ms + twt_thickness_ms + pad_ms
+    if contact_time_ms is not None:
+        fine_t_hi = max(fine_t_hi, contact_time_ms + pad_ms)
+    fine_t = np.arange(top_time_ms - pad_ms, fine_t_hi, dt_fine_ms)
+
     spikes = [(top_time_ms, reflection_coefficient)]
     if include_base:
         spikes.append((base_time_ms, -reflection_coefficient))
-    if flat_spot_offset_ms is not None:
-        spikes.append((base_time_ms + flat_spot_offset_ms, flat_spot_rc))
+    if contact_time_ms is not None and top_time_ms < contact_time_ms:
+        spikes.append((contact_time_ms, flat_spot_rc))
     r_fine = _reflectivity_series(fine_t, spikes)
 
     wavelet_fine = ricker_wavelet(freq_hz, dt_fine_ms / 1000.0, length_ms=120)
@@ -73,7 +88,7 @@ def _fine_wedge(top_time_ms, thickness_m, velocity_mps, reflection_coefficient, 
 
 
 def wedge_peak_amplitude(thickness_m, velocity_mps, reflection_coefficient, freq_hz,
-                          top_time_ms=700, flat_spot_offset_ms=None, flat_spot_rc=None,
+                          top_time_ms=700, contact_time_ms=None, flat_spot_rc=None,
                           dt_fine_ms=0.1, pad_ms=150):
     """
     Peak |amplitude| of the wedge response, measured on the fine time grid -
@@ -89,13 +104,13 @@ def wedge_peak_amplitude(thickness_m, velocity_mps, reflection_coefficient, freq
     and shifts its apparent peak location.
     """
     wedge_fine, _, _ = _fine_wedge(top_time_ms, thickness_m, velocity_mps, reflection_coefficient,
-                                    freq_hz, flat_spot_offset_ms, flat_spot_rc,
+                                    freq_hz, contact_time_ms, flat_spot_rc,
                                     dt_fine_ms=dt_fine_ms, pad_ms=pad_ms)
     return np.max(np.abs(wedge_fine))
 
 
 def model_wedge_response(top_time_ms, thickness_m, velocity_mps, reflection_coefficient,
-                          freq_hz, dt_ms, flat_spot_offset_ms=None, flat_spot_rc=None,
+                          freq_hz, dt_ms, contact_time_ms=None, flat_spot_rc=None,
                           include_base=True, dt_fine_ms=0.1, pad_ms=150):
     """
     Band-limited seismic response of a reservoir wedge, resampled onto the
@@ -111,9 +126,15 @@ def model_wedge_response(top_time_ms, thickness_m, velocity_mps, reflection_coef
     """
     wedge_fine, fine_t, twt_thickness_ms = _fine_wedge(
         top_time_ms, thickness_m, velocity_mps, reflection_coefficient, freq_hz,
-        flat_spot_offset_ms, flat_spot_rc, include_base, dt_fine_ms, pad_ms,
+        contact_time_ms, flat_spot_rc, include_base, dt_fine_ms, pad_ms,
     )
-    coarse_t = np.arange(top_time_ms - pad_ms, top_time_ms + twt_thickness_ms + pad_ms, dt_ms)
+    # kept in sync with _fine_wedge's fine_t extension above - otherwise the
+    # flat-spot event could exist in wedge_fine but fall outside coarse_t and
+    # never actually get injected into the trace
+    coarse_t_hi = top_time_ms + twt_thickness_ms + pad_ms
+    if contact_time_ms is not None:
+        coarse_t_hi = max(coarse_t_hi, contact_time_ms + pad_ms)
+    coarse_t = np.arange(top_time_ms - pad_ms, coarse_t_hi, dt_ms)
     wedge_coarse = np.interp(coarse_t, fine_t, wedge_fine)
 
     return wedge_coarse, coarse_t, twt_thickness_ms
@@ -147,7 +168,7 @@ def estimate_amplitude_scale(background_patch, reference_rc=0.05):
 
 def inject_dhi_anomaly(patch, time_axis_ms, xl_axis, top_time_ms, thickness_m, velocity_mps,
                         reflection_coefficient, freq_hz, xl_extent=None, taper_traces=5,
-                        flat_spot=False, flat_spot_offset_ms=15, polarity_reversal=False,
+                        flat_spot=False, contact_time_ms=None, polarity_reversal=False,
                         amplitude_scale=1.0):
     """
     Add a synthetic reservoir-wedge response onto a background patch.
@@ -159,8 +180,11 @@ def inject_dhi_anomaly(patch, time_axis_ms, xl_axis, top_time_ms, thickness_m, v
         the full width of `patch`.
     polarity_reversal: linearly flips RC sign across xl_extent (updip gas ->
         downdip water), producing the polarity-reversal signature from Nanda.
-    flat_spot: adds a positive-polarity flat reflector `flat_spot_offset_ms`
-        below the reservoir base, representing the fluid contact.
+    flat_spot: adds a positive-polarity flat reflector at the absolute time
+        `contact_time_ms` (required if flat_spot=True) - the fluid contact.
+        Unlike the 3D version, this function has no horizon/structural-relief
+        concept (top_time_ms is a single constant for the whole patch), so
+        the contact time must be supplied directly rather than derived.
     taper_traces: number of traces at each edge of xl_extent to cosine-taper,
         so the injected patch doesn't have a hard-edged lateral boundary.
     amplitude_scale: counts-per-unit-RC conversion factor (see
@@ -168,6 +192,9 @@ def inject_dhi_anomaly(patch, time_axis_ms, xl_axis, top_time_ms, thickness_m, v
         units, which is invisible next to real trace amplitudes; pass a
         dataset-calibrated scale to actually inject onto real data.
     """
+    if flat_spot and contact_time_ms is None:
+        raise ValueError('flat_spot=True requires contact_time_ms to be set')
+
     out = patch.copy()
     dt_ms = time_axis_ms[1] - time_axis_ms[0]
     xl_lo, xl_hi = xl_extent if xl_extent is not None else (xl_axis[0], xl_axis[-1])
@@ -183,7 +210,7 @@ def inject_dhi_anomaly(patch, time_axis_ms, xl_axis, top_time_ms, thickness_m, v
 
         wedge, wedge_t, _ = model_wedge_response(
             top_time_ms, thickness_m, velocity_mps, rc, freq_hz, dt_ms,
-            flat_spot_offset_ms=flat_spot_offset_ms if flat_spot else None,
+            contact_time_ms=contact_time_ms if flat_spot else None,
             flat_spot_rc=abs(reflection_coefficient) if flat_spot else None,
         )
 
@@ -203,7 +230,7 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
                            thickness_m, velocity_mps, reflection_coefficient, freq_hz,
                            il_center, xl_center, il_radius, xl_radius, rotation_deg=0.0,
                            amplitude_scale=1.0, edge_taper_frac=0.2, flat_spot=False,
-                           flat_spot_offset_ms=15, polarity_reversal=False,
+                           contact_frac=0.5, polarity_reversal=False,
                            horizon_time_offset_ms=0.0, single_reflector=False,
                            flat_top_time_ms=None, apply_sag=True, v_gas_mps=None):
     """
@@ -225,6 +252,16 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
     polarity_reversal: linearly flips RC sign across the footprint's local
         (rotated) crossline-like axis (updip gas -> downdip water), as in
         Nanda (2021).
+    flat_spot: adds a fluid-contact reflector at a single absolute time
+        (`contact_time_ms`, derived below from the footprint's own structural
+        relief), present only updip of the contact - see F1. Requires a real
+        horizon (flat_top_time_ms must be None), since the contact is placed
+        relative to the footprint's structural relief.
+    contact_frac: where the contact sits within the footprint's relief, as a
+        fraction from the crest (0 = at the crest itself, 1 = at the deepest
+        point in the footprint). Default 0.5 puts it roughly halfway down,
+        so part of the footprint is updip (gas-filled) and part downdip
+        (water leg) - see F2 for how this drives the polarity reversal too.
     horizon_time_offset_ms: constant shift applied to the horizon's time at
         every point in the footprint - lets a scenario sit structurally
         *below* a horizon (e.g. a syncline hard negative, see scenarios.py)
@@ -260,6 +297,40 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
     sag_shift_ms = sag_time_shift_ms(thickness_m, v_gas_mps, velocity_mps) if apply_sag else 0.0
     theta = np.radians(rotation_deg)
 
+    # F1: derive the flat-spot contact from the footprint's own structural
+    # relief, once, before the per-voxel loop - a flat spot needs an absolute
+    # time to be flat against, and that time has to come from somewhere real
+    # rather than an arbitrary offset below the (dipping) top.
+    contact_time_ms = None
+    if flat_spot:
+        if flat_top_time_ms is not None:
+            raise ValueError('flat_spot=True needs a real horizon (flat_top_time_ms must be '
+                              'None) - there is no structural relief to place a contact against '
+                              'when the top time is a flat artificial constant')
+        footprint_top_times = []
+        for i, il in enumerate(inline_axis):
+            for j, xl in enumerate(xl_axis):
+                d_il, d_xl = il - il_center, xl - xl_center
+                il_rot = d_il * np.cos(theta) + d_xl * np.sin(theta)
+                xl_rot = -d_il * np.sin(theta) + d_xl * np.cos(theta)
+                r = np.sqrt((il_rot / il_radius) ** 2 + (xl_rot / xl_radius) ** 2)
+                if r <= 1.0:
+                    footprint_top_times.append(horizon_surface.time_at(il, xl) + horizon_time_offset_ms)
+
+        crest_time_ms = min(footprint_top_times)
+        relief_ms = max(footprint_top_times) - crest_time_ms
+        min_resolvable_relief_ms = 500.0 / freq_hz  # half a Ricker cycle - below this the
+        # contact sits inside the same wavelet as the reservoir top and isn't a separable event
+        if relief_ms < min_resolvable_relief_ms:
+            raise ValueError(
+                f'flat_spot=True but footprint relief ({relief_ms:.1f}ms) is below the '
+                f'resolvable threshold ({min_resolvable_relief_ms:.1f}ms at {freq_hz}Hz) - the '
+                'contact would sit inside the same wavelet as the reservoir top and produce no '
+                'observable flat spot. Use a larger/differently-placed footprint, a lower '
+                'freq_hz, or disable flat_spot for this scenario.'
+            )
+        contact_time_ms = crest_time_ms + contact_frac * relief_ms
+
     for i, il in enumerate(inline_axis):
         for j, xl in enumerate(xl_axis):
             d_il, d_xl = il - il_center, xl - xl_center
@@ -281,7 +352,7 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
 
             wedge, wedge_t, _ = model_wedge_response(
                 top_time_ms, thickness_m, velocity_mps, rc, freq_hz, dt_ms,
-                flat_spot_offset_ms=flat_spot_offset_ms if flat_spot else None,
+                contact_time_ms=contact_time_ms if flat_spot else None,
                 flat_spot_rc=abs(reflection_coefficient) if flat_spot else None,
                 include_base=not single_reflector,
             )
