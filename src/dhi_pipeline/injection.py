@@ -169,7 +169,7 @@ def estimate_amplitude_scale(background_patch, reference_rc=0.05):
 def inject_dhi_anomaly(patch, time_axis_ms, xl_axis, top_time_ms, thickness_m, velocity_mps,
                         reflection_coefficient, freq_hz, xl_extent=None, taper_traces=5,
                         flat_spot=False, contact_time_ms=None, polarity_reversal=False,
-                        amplitude_scale=1.0):
+                        water_leg_scale=1.0, polarity_blend_frac=0.03, amplitude_scale=1.0):
     """
     Add a synthetic reservoir-wedge response onto a background patch.
 
@@ -178,8 +178,15 @@ def inject_dhi_anomaly(patch, time_axis_ms, xl_axis, top_time_ms, thickness_m, v
         gas-sand per Nanda (2021), positive = weak water-sand case.
     xl_extent: (xl_lo, xl_hi) lateral footprint of the reservoir; defaults to
         the full width of `patch`.
-    polarity_reversal: linearly flips RC sign across xl_extent (updip gas ->
-        downdip water), producing the polarity-reversal signature from Nanda.
+    polarity_reversal: smoothly blends RC from `reflection_coefficient` (gas
+        leg) to `RC_WATER_SAND * water_leg_scale` (brine leg, weaker and
+        opposite-signed - never zero) across the footprint's lateral centre.
+        Unlike the 3D version there's no real horizon here (top_time_ms is a
+        single constant), so the transition is anchored to the footprint's
+        geometric centre in lieu of a real fluid-contact depth - see F2.
+        `polarity_blend_frac` sets the transition width as a fraction of the
+        footprint's trace count (default 0.03, i.e. a handful of traces
+        either side of centre - "~2-3 traces" per the review, not a hard step).
     flat_spot: adds a positive-polarity flat reflector at the absolute time
         `contact_time_ms` (required if flat_spot=True) - the fluid contact.
         Unlike the 3D version, this function has no horizon/structural-relief
@@ -201,12 +208,18 @@ def inject_dhi_anomaly(patch, time_axis_ms, xl_axis, top_time_ms, thickness_m, v
     footprint = np.where((xl_axis >= xl_lo) & (xl_axis <= xl_hi))[0]
 
     twt_thickness_ms = thickness_to_twt_ms(thickness_m, velocity_mps)
+    blend_width = max(polarity_blend_frac, 1e-6)
 
     for i, xl_idx in enumerate(footprint):
         rc = reflection_coefficient
         if polarity_reversal:
+            # F2: same non-zero-leg + smooth-blend fix as the 3D version, but
+            # anchored to lateral position (frac) since there's no real depth
+            # here - previously rc crossed exactly zero at frac=0.5 (footprint
+            # centre), same bug as the 3D version just in a different axis.
             frac = i / max(len(footprint) - 1, 1)          # 0 at xl_lo -> 1 at xl_hi
-            rc = reflection_coefficient * (1 - 2 * frac)     # sign flips halfway across
+            blend_frac = 0.5 * (1 + np.tanh((frac - 0.5) / blend_width))
+            rc = reflection_coefficient * (1 - blend_frac) + (RC_WATER_SAND * water_leg_scale) * blend_frac
 
         wedge, wedge_t, _ = model_wedge_response(
             top_time_ms, thickness_m, velocity_mps, rc, freq_hz, dt_ms,
@@ -230,7 +243,7 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
                            thickness_m, velocity_mps, reflection_coefficient, freq_hz,
                            il_center, xl_center, il_radius, xl_radius, rotation_deg=0.0,
                            amplitude_scale=1.0, edge_taper_frac=0.2, flat_spot=False,
-                           contact_frac=0.5, polarity_reversal=False,
+                           contact_frac=0.5, polarity_reversal=False, water_leg_scale=1.0,
                            horizon_time_offset_ms=0.0, single_reflector=False,
                            flat_top_time_ms=None, apply_sag=True, v_gas_mps=None):
     """
@@ -249,19 +262,32 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
     edge_taper_frac: fraction of the footprint's outer radius (by normalised
         elliptical distance) that cosine-tapers to zero, so the footprint
         doesn't have a hard-edged boundary.
-    polarity_reversal: linearly flips RC sign across the footprint's local
-        (rotated) crossline-like axis (updip gas -> downdip water), as in
-        Nanda (2021).
+    polarity_reversal: drives RC from the same `contact_time_ms` as flat_spot
+        (F2) - bright gas-sand RC updip of the contact, a real (weaker,
+        opposite-signed) brine-sand RC downdip, blended smoothly across the
+        contact rather than a hard step. Previously this flipped sign
+        linearly across the footprint's geometric centre regardless of where
+        the real contact was, which zeroed out exactly at the centre (where
+        the edge taper was also strongest) - see the review, F2.
     flat_spot: adds a fluid-contact reflector at a single absolute time
         (`contact_time_ms`, derived below from the footprint's own structural
         relief), present only updip of the contact - see F1. Requires a real
         horizon (flat_top_time_ms must be None), since the contact is placed
-        relative to the footprint's structural relief.
+        relative to the footprint's structural relief. Note flat_spot and
+        polarity_reversal both key off the same contact_time_ms - enabling
+        either one triggers the relief derivation below, since a polarity
+        reversal is physically the same fluid contact as the flat spot,
+        just expressed as an amplitude/sign change rather than an extra event.
     contact_frac: where the contact sits within the footprint's relief, as a
         fraction from the crest (0 = at the crest itself, 1 = at the deepest
         point in the footprint). Default 0.5 puts it roughly halfway down,
         so part of the footprint is updip (gas-filled) and part downdip
-        (water leg) - see F2 for how this drives the polarity reversal too.
+        (water leg).
+    water_leg_scale: scales RC_WATER_SAND (the real, measured brine-sand
+        reflection coefficient - see the constants below) for the downdip
+        leg when polarity_reversal=True. Default 1.0 uses the full measured
+        contrast; RC_WATER_SAND itself is not tier-scaled the way the gas
+        side is, since a brine leg doesn't have a "severity".
     horizon_time_offset_ms: constant shift applied to the horizon's time at
         every point in the footprint - lets a scenario sit structurally
         *below* a horizon (e.g. a syncline hard negative, see scenarios.py)
@@ -297,16 +323,20 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
     sag_shift_ms = sag_time_shift_ms(thickness_m, v_gas_mps, velocity_mps) if apply_sag else 0.0
     theta = np.radians(rotation_deg)
 
-    # F1: derive the flat-spot contact from the footprint's own structural
-    # relief, once, before the per-voxel loop - a flat spot needs an absolute
-    # time to be flat against, and that time has to come from somewhere real
-    # rather than an arbitrary offset below the (dipping) top.
+    # F1/F2: derive the contact from the footprint's own structural relief,
+    # once, before the per-voxel loop. Both flat_spot (an extra reflector at
+    # the contact) and polarity_reversal (a sign change across it) are the
+    # same physical fluid contact, so either one needs contact_time_ms - a
+    # real absolute time has to come from somewhere, not an arbitrary offset
+    # below the (dipping) top or a flip at the footprint's geometric centre.
     contact_time_ms = None
-    if flat_spot:
+    polarity_blend_ms = None
+    if flat_spot or polarity_reversal:
         if flat_top_time_ms is not None:
-            raise ValueError('flat_spot=True needs a real horizon (flat_top_time_ms must be '
-                              'None) - there is no structural relief to place a contact against '
-                              'when the top time is a flat artificial constant')
+            raise ValueError('flat_spot/polarity_reversal need a real horizon '
+                              '(flat_top_time_ms must be None) - there is no structural relief '
+                              'to place a contact against when the top time is a flat '
+                              'artificial constant')
         footprint_top_times = []
         for i, il in enumerate(inline_axis):
             for j, xl in enumerate(xl_axis):
@@ -323,13 +353,21 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
         # contact sits inside the same wavelet as the reservoir top and isn't a separable event
         if relief_ms < min_resolvable_relief_ms:
             raise ValueError(
-                f'flat_spot=True but footprint relief ({relief_ms:.1f}ms) is below the '
-                f'resolvable threshold ({min_resolvable_relief_ms:.1f}ms at {freq_hz}Hz) - the '
-                'contact would sit inside the same wavelet as the reservoir top and produce no '
-                'observable flat spot. Use a larger/differently-placed footprint, a lower '
-                'freq_hz, or disable flat_spot for this scenario.'
+                f'flat_spot/polarity_reversal but footprint relief ({relief_ms:.1f}ms) is below '
+                f'the resolvable threshold ({min_resolvable_relief_ms:.1f}ms at {freq_hz}Hz) - '
+                'the contact would sit inside the same wavelet as the reservoir top and produce '
+                'no observable flat spot or polarity change. Use a larger/differently-placed '
+                'footprint, a lower freq_hz, or disable both for this scenario.'
             )
         contact_time_ms = crest_time_ms + contact_frac * relief_ms
+
+        # F2: width (in ms) of the smooth transition across the contact, for
+        # polarity_reversal - "~2-3 traces" translated into time via the
+        # footprint's own average dip rate (total relief over roughly its
+        # diameter along the dip direction), so the blend scales with how
+        # steeply this particular footprint dips rather than a fixed ms value.
+        dip_rate_ms_per_trace = relief_ms / (2 * max(il_radius, xl_radius))
+        polarity_blend_ms = 2.5 * dip_rate_ms_per_trace
 
     for i, il in enumerate(inline_axis):
         for j, xl in enumerate(xl_axis):
@@ -340,15 +378,20 @@ def inject_dhi_anomaly_3d(volume, time_axis_ms, inline_axis, xl_axis, horizon_su
             if r > 1.0:
                 continue
 
-            rc = reflection_coefficient
-            if polarity_reversal:
-                frac = (xl_rot + xl_radius) / (2 * xl_radius)
-                rc = reflection_coefficient * (1 - 2 * np.clip(frac, 0, 1))
-
             if flat_top_time_ms is not None:
                 top_time_ms = flat_top_time_ms
             else:
                 top_time_ms = horizon_surface.time_at(il, xl) + horizon_time_offset_ms
+
+            rc = reflection_coefficient
+            if polarity_reversal:
+                # F2: keyed off the real contact (structural depth), not lateral
+                # position in the footprint - a smooth tanh blend across
+                # delta_t_ms=0 so neither leg is ever exactly zero and there's
+                # no hard step, unlike the old geometric-centre zero-crossing.
+                delta_t_ms = top_time_ms - contact_time_ms
+                blend_frac = 0.5 * (1 + np.tanh(delta_t_ms / polarity_blend_ms))
+                rc = reflection_coefficient * (1 - blend_frac) + (RC_WATER_SAND * water_leg_scale) * blend_frac
 
             wedge, wedge_t, _ = model_wedge_response(
                 top_time_ms, thickness_m, velocity_mps, rc, freq_hz, dt_ms,
