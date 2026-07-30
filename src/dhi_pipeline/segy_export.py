@@ -6,9 +6,19 @@ loadable SEG-Y sub-volume per scenario - a real chunk of the F3 survey with one
 injected DHI or hard negative, openable in normal seismic interpretation
 software (OpendTect, Petrel, ...) so the result can be visually judged, not just
 read back as an array.
+
+`export_blind_exchange_batch` builds on this for the actual blind-test hand-off
+(C5 in the runbook): the .npz patch dataset can't be sent as-is, since each
+patch is already cropped exactly onto the injection site and carries the
+footprint mask - handing that over would give away the answer before the other
+side's detector even runs. This exports real, unlabelled SEG-Y sub-volumes
+instead, shuffled and renamed to anonymous IDs so neither the filenames nor
+their order leak anything, with the real answer key kept in a separate,
+private manifest that never leaves this side.
 """
 
 import numpy as np
+import pandas as pd
 import segyio
 
 from .dataset import _scenario_center_time
@@ -81,3 +91,76 @@ def export_scenario_to_segy(kwargs, label, f, iline_map, inlines, xlines, horizo
                 trace_i += 1
 
     return output_path
+
+
+def label_row_to_injection_kwargs(row, velocity_mps, freq_hz):
+    """
+    Reconstruct the kwargs export_scenario_to_segy/inject_dhi_anomaly_3d needs
+    from one row of labels.parquet - the row itself only stores the resulting
+    label fields, not the original call, so a couple of fields need inferring
+    from `kind` rather than reading directly:
+
+    - `single_reflector` isn't stored as its own column; it's implied by
+      kind == 'hard_negative_single_reflector'.
+    - `flat_top_time_ms` isn't stored either; for kind == 'hard_negative_
+      no_conformance' it equals the stored center_time_ms exactly (see
+      dataset.py::_scenario_center_time - that's *why* center_time_ms is
+      already correct for those rows), otherwise it's None (follow the horizon).
+    - `velocity_mps`/`freq_hz` are survey-level calibration constants (see
+      C1), not per-example fields, so they're passed in rather than read from
+      the row.
+    - `horizon_time_offset_ms`/`apply_sag`/`v_gas_mps` are never overridden by
+      either scenario sampler in this codebase, so their defaults are correct
+      and don't need reconstructing here.
+    """
+    return dict(
+        thickness_m=row['thickness_m'], velocity_mps=velocity_mps,
+        reflection_coefficient=row['reflection_coefficient'], freq_hz=freq_hz,
+        il_center=int(row['il_center']), xl_center=int(row['xl_center']),
+        il_radius=row['il_radius'], xl_radius=row['xl_radius'], rotation_deg=row['rotation_deg'],
+        flat_spot=bool(row['flat_spot']) if pd.notna(row['flat_spot']) else False,
+        polarity_reversal=bool(row['polarity_reversal']) if pd.notna(row['polarity_reversal']) else False,
+        single_reflector=(row['kind'] == 'hard_negative_single_reflector'),
+        flat_top_time_ms=row['center_time_ms'] if row['kind'] == 'hard_negative_no_conformance' else None,
+    )
+
+
+def export_blind_exchange_batch(labels, f, iline_map, inlines, xlines, horizon,
+                                 velocity_mps, freq_hz, output_dir, seed=0,
+                                 il_extent=160, xl_extent=160, reference_rc=0.05):
+    """
+    Export every example in `labels` as an anonymised, unlabelled SEG-Y file
+    for the C5 blind exchange - safe to hand to the other side, unlike the
+    .npz patch dataset (pre-cropped onto the injection site, mask included).
+
+    Shuffles the examples (seeded, so reproducible on this side only) and
+    assigns sequential anonymous IDs (blind_0000, blind_0001, ...) instead of
+    the real example_id - so neither the filename nor the hand-off order
+    reveals anything about which examples are positives, which tier, etc.
+
+    Writes the .sgy files to `output_dir` (send this to the other side - no
+    other file from this directory) and returns a private manifest DataFrame
+    (blind_id -> every real label field, including is_dhi/tier/kind/mask
+    geometry) - keep this on this side only, it's the answer key needed to
+    score the other side's guesses later. Does not write the manifest to disk
+    itself - the caller decides where to save it privately.
+    """
+    shuffled = labels.sample(frac=1.0, random_state=seed).reset_index(drop=True)
+    shuffled['blind_id'] = [f'blind_{i:04d}' for i in range(len(shuffled))]
+
+    manifest_rows = []
+    for _, row in shuffled.iterrows():
+        kwargs = label_row_to_injection_kwargs(row, velocity_mps, freq_hz)
+        out_path = f"{output_dir}/{row['blind_id']}.sgy"
+        result = export_scenario_to_segy(kwargs, None, f, iline_map, inlines, xlines, horizon,
+                                          out_path, il_extent=il_extent, xl_extent=xl_extent,
+                                          reference_rc=reference_rc)
+        manifest_rows.append(dict(row, exported=result is not None))
+
+    manifest = pd.DataFrame(manifest_rows)
+    n_failed = (~manifest['exported']).sum()
+    if n_failed:
+        import warnings
+        warnings.warn(f'{n_failed}/{len(manifest)} examples could not be exported '
+                       f'(ran off the survey edge) - excluded from the exchange batch.')
+    return manifest
