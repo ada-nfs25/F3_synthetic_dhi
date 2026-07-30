@@ -79,7 +79,19 @@ def load_horizon_surface(horizon_path, ilxl_array, xy_array, max_distance=50.0):
 class HorizonSurface:
     """Queryable (inline, crossline) -> time_ms lookup for a matched horizon."""
 
-    def __init__(self, surface_df):
+    def __init__(self, surface_df, max_lookup_distance=100.0):
+        """
+        max_lookup_distance: maximum (inline, crossline) trace-unit distance
+        the nearest-neighbour fallback in time_at() is allowed to travel - F6.
+        Without a bound, a query near a survey edge or a hole in the
+        interpretation could silently return a time from a far-away,
+        unrelated location instead of failing loudly. Calibrated empirically
+        against H1: a dense grid over the whole matched extent is exact/
+        near-exact (distance 0) at the 95th percentile, but reaches up to
+        ~76 trace units in the edge-effect tail (consistent with this
+        project's own choice of edge_margin=80 for structural lows) - 100
+        gives that tail comfortable headroom while still being a real bound.
+        """
         self.lookup = {
             (int(row.inline), int(row.crossline)): row.time_ms
             for row in surface_df.itertuples()
@@ -87,13 +99,26 @@ class HorizonSurface:
         self._ilxl_array = surface_df[['inline', 'crossline']].values
         self._tree = cKDTree(self._ilxl_array)
         self._times = surface_df['time_ms'].values
+        self.max_lookup_distance = max_lookup_distance
 
     def time_at(self, il, xl):
-        """Exact match if this (il, xl) was picked, else nearest picked location's time (gaps happen near survey edges)."""
+        """
+        Exact match if this (il, xl) was picked, else nearest picked
+        location's time (gaps happen near survey edges) - but only within
+        max_lookup_distance trace units. Raises beyond that, rather than
+        silently returning a time from an unrelated, far-away location (F6).
+        """
         exact = self.lookup.get((il, xl))
         if exact is not None:
             return exact
-        _, idx = self._tree.query([il, xl])
+        dist, idx = self._tree.query([il, xl])
+        if dist > self.max_lookup_distance:
+            raise ValueError(
+                f'time_at({il}, {xl}): nearest matched pick is {dist:.1f} trace units away, '
+                f'beyond max_lookup_distance={self.max_lookup_distance} - too far to be a '
+                'reliable gap-fill (likely a survey edge or a hole in the interpretation, '
+                'not a nearby real pick).'
+            )
         return self._times[idx]
 
 
