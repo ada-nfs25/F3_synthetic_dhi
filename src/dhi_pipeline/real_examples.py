@@ -22,9 +22,16 @@ from .dataset import _read_subvolume
 def load_pickset(path):
     """
     Load an OpendTect PickSet Group file (`.pck`): a short header (format/
-    group/date/'!'/ref/color lines) followed by whitespace-separated
-    x, y, time_s rows. Header lines don't parse as three floats, so they're
-    skipped rather than counted/sliced - robust to the exact header length.
+    group/date/'!'/ref/color/size/marker/connect lines) followed by
+    whitespace-separated data rows. Two variants seen in this project's data:
+    plain discrete picks (exactly x, y, time_s - e.g. Chimneys_yes/no.pck),
+    and polygon-outline picksets with extra trailing per-vertex metadata
+    columns (e.g. Shallow_Bright_Spot.pck: x, y, time_s, then 3 more numbers
+    - vertex/connector flags, not coordinates). Only the first 3 fields are
+    ever coordinates, so rows are read leniently (>=3 fields, extras
+    ignored) rather than requiring an exact count. Header lines have <3
+    fields or don't parse as floats, so they're skipped either way -
+    robust to the exact header length and to which variant this file is.
 
     Returns DataFrame(x, y, time_ms).
     """
@@ -32,10 +39,10 @@ def load_pickset(path):
     with open(path) as fh:
         for line in fh:
             parts = line.split()
-            if len(parts) != 3:
+            if len(parts) < 3:
                 continue
             try:
-                x, y, time_s = (float(p) for p in parts)
+                x, y, time_s = (float(p) for p in parts[:3])
             except ValueError:
                 continue
             rows.append((x, y, time_s * 1000.0))
@@ -209,8 +216,11 @@ def build_real_example_set(output_dir, segy_path, yes_pck_path, no_pck_path,
             rows.append(dict(
                 example_id=example_id, split='real', kind=pick['kind'], is_dhi=pick['is_dhi'],
                 inline_split=inline_split, patch_file=fname, il_lo=result['il_lo'], il_hi=result['il_hi'],
-                xl_lo=result['xl_lo'], xl_hi=result['xl_hi'], center_inline=pick['inline'],
-                center_crossline=pick['crossline'], center_time_ms=pick['time_ms'],
+                xl_lo=result['xl_lo'], xl_hi=result['xl_hi'],
+                # il_center/xl_center (not center_inline/center_crossline) to match
+                # dataset.build_dataset's synthetic labels schema - dhi_detector.ipynb's
+                # site_id/grouping logic reads these column names directly.
+                il_center=pick['inline'], xl_center=pick['crossline'], center_time_ms=pick['time_ms'],
                 match_distance_m=pick['distance'], n_missing_traces=result['n_missing_traces'],
             ))
 
