@@ -63,7 +63,7 @@ def _read_subvolume(f, iline_map, inline_axis, xl_axis, n_samples):
 
 
 def generate_example(kwargs, label, cached_subvol, cache_inline_axis, cache_xl_axis, samples_ms,
-                      horizon, dt_ms, il_extent=160, xl_extent=160, time_extent_ms=500, reference_rc=0.05):
+                      horizon, dt_ms, il_extent=96, xl_extent=96, time_extent_ms=500, reference_rc=0.05):
     """
     Build one dataset example: slices a fixed-size patch out of a pre-cached
     sub-volume (F10 - see `_read_subvolume`/`build_dataset`, which reads the
@@ -91,6 +91,14 @@ def generate_example(kwargs, label, cached_subvol, cache_inline_axis, cache_xl_a
     if il_lo < cache_inline_axis[0] or il_hi > cache_inline_axis[-1] or \
        xl_lo < cache_xl_axis[0] or xl_hi > cache_xl_axis[-1]:
         return None, 'il_xl_bounds'
+
+    # F4: the footprint ellipse's own radius is its full extent (inject_dhi_anomaly_3d's
+    # edge_taper_frac softens amplitude *inside* r<=1, it doesn't grow past il_radius/xl_radius),
+    # so require the radius to clear the patch's half-extent with a small margin - otherwise the
+    # footprint gets clipped by the patch edge and the localisation mask silently loses meaning
+    # (see the review's F4, radius=80 against the old il_extent=160 covered 78% of the patch).
+    if kwargs['il_radius'] >= il_extent / 2 or kwargs['xl_radius'] >= xl_extent / 2:
+        return None, 'footprint_exceeds_patch'
 
     # same edge-skip logic as il/xl above, but for the time window - without this, a
     # center_time_ms near the start/end of the recording silently produced a shorter-than-
@@ -153,7 +161,7 @@ def generate_example(kwargs, label, cached_subvol, cache_inline_axis, cache_xl_a
 def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
                    dt_ms, velocity_mps, freq_hz, train_inline_range, test_inline_range,
                    structural_highs, structural_lows, n_per_tier=3, n_hard_negatives_per_kind=3,
-                   seed=0, il_extent=160, xl_extent=160, time_extent_ms=500,
+                   seed=0, il_extent=96, xl_extent=96, time_extent_ms=500,
                    max_skip_rate=0.5):
     """
     Generate a full patch+label dataset: n_per_tier positive examples per
@@ -233,7 +241,7 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
             cache_xl_axis = np.arange(cache_xl_lo, cache_xl_hi + 1)
             cached_subvol = _read_subvolume(f, iline_map, cache_inline_axis, cache_xl_axis, samples_ms.size)
 
-            skip_counts[split_name] = {'il_xl_bounds': 0, 'time_bounds': 0}
+            skip_counts[split_name] = {'il_xl_bounds': 0, 'time_bounds': 0, 'footprint_exceeds_patch': 0}
             for kwargs, label in scenarios:
                 result, skip_reason = generate_example(
                     kwargs, label, cached_subvol, cache_inline_axis, cache_xl_axis, samples_ms,

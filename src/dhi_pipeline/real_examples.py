@@ -69,7 +69,7 @@ def match_picks_to_grid(picks_df, ilxl_array, xy_array, max_distance=50.0):
 
 
 def filter_to_patchable(matched_df, inlines, xlines, samples_ms,
-                         il_extent=160, xl_extent=160, time_extent_ms=500):
+                         il_extent=96, xl_extent=96, time_extent_ms=500):
     """
     Flag matched picks where a full (il_extent x xl_extent x time_extent_ms)
     patch centred on the pick fits inside the survey's actual recorded
@@ -97,7 +97,7 @@ def filter_to_patchable(matched_df, inlines, xlines, samples_ms,
 
 def extract_real_patch(il_center, xl_center, center_time_ms, cached_subvol,
                         cache_inline_axis, cache_xl_axis, samples_ms, dt_ms,
-                        il_extent=160, xl_extent=160, time_extent_ms=500):
+                        il_extent=96, xl_extent=96, time_extent_ms=500):
     """
     Slice a real (uninjected) patch out of a pre-cached sub-volume and
     compute its attribute stack - same shape/channel format as a synthetic
@@ -128,7 +128,7 @@ def extract_real_patch(il_center, xl_center, center_time_ms, cached_subvol,
 
 def build_real_example_set(output_dir, segy_path, yes_pck_path, no_pck_path,
                             ilxl_array, xy_array, iline_map, inlines, xlines,
-                            il_extent=160, xl_extent=160, time_extent_ms=500,
+                            il_extent=96, xl_extent=96, time_extent_ms=500,
                             train_inline_range=(150, 345), test_inline_range=(365, 670)):
     """
     Build the real-anomaly evaluation set: matches Chimneys_yes/Chimneys_no

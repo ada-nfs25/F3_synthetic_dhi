@@ -35,7 +35,10 @@ TIER_RANGES = {
                            flat_spot_prob=0.70, polarity_reversal_prob=0.70),
 }
 
-FOOTPRINT_RADIUS_RANGE = (30, 80)  # traces, both il and xl radius sampled independently
+FOOTPRINT_RADIUS_RANGE = (10, 15)  # traces, both il and xl radius sampled independently
+# F4: shrunk from (30, 80) to converge with Aziz's pipeline scale (~0.28-0.40km
+# footprints) and to fit comfortably inside the shrunk il_extent/xl_extent=96
+# patch (see dataset.py) - see fixes-2026-07-29.md / next-steps-2026-07-29.md.
 
 
 def _sample_footprint(rng):

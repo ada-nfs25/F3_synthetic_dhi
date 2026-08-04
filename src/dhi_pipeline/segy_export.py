@@ -26,7 +26,7 @@ from .injection import estimate_amplitude_scale, inject_dhi_anomaly_3d
 
 
 def export_scenario_to_segy(kwargs, label, f, iline_map, inlines, xlines, horizon,
-                             output_path, il_extent=160, xl_extent=160, reference_rc=0.05):
+                             output_path, il_extent=96, xl_extent=96, reference_rc=0.05):
     """
     Inject one scenario onto a real sub-volume (full trace length, not the
     500ms window used for ML patches - more context for visual inspection)
@@ -127,7 +127,7 @@ def label_row_to_injection_kwargs(row, velocity_mps, freq_hz):
 
 def export_blind_exchange_batch(labels, f, iline_map, inlines, xlines, horizon,
                                  velocity_mps, freq_hz, output_dir, seed=0,
-                                 il_extent=160, xl_extent=160, reference_rc=0.05):
+                                 il_extent=96, xl_extent=96, reference_rc=0.05):
     """
     Export every example in `labels` as an anonymised, unlabelled SEG-Y file
     for the C5 blind exchange - safe to hand to the other side, unlike the
