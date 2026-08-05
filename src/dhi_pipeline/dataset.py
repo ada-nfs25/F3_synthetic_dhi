@@ -127,10 +127,26 @@ def generate_example(kwargs, label, cached_subvol, cache_inline_axis, cache_xl_a
     raw_patch = raw[:, :, t_mask]
 
     amp_scale = estimate_amplitude_scale(raw_patch, reference_rc=reference_rc)
-    injected, twt_thickness_ms = inject_dhi_anomaly_3d(
-        raw_patch, patch_time_axis_ms, patch_inline_axis, patch_xl_axis, horizon,
-        amplitude_scale=amp_scale, **kwargs,
-    )
+    try:
+        injected, twt_thickness_ms = inject_dhi_anomaly_3d(
+            raw_patch, patch_time_axis_ms, patch_inline_axis, patch_xl_axis, horizon,
+            amplitude_scale=amp_scale, **kwargs,
+        )
+    except ValueError as e:
+        # F4's smaller footprints make two of inject_dhi_anomaly_3d's own validity checks
+        # much more likely to fire on an otherwise-legitimate random scenario draw: a
+        # shallow-dip site where the footprint's relief can't resolve a flat_spot/
+        # polarity_reversal contact (F1's guard), or a footprint edge that happens to probe
+        # a real horizon gap beyond max_lookup_distance (F6). Both are expected outcomes of
+        # random sampling, not bugs - skip just this one scenario rather than let it crash
+        # the whole build_dataset run (previously uncaught, so one bad draw lost the entire
+        # batch). Anything else (e.g. a genuine flat_top_time_ms/flat_spot kwargs conflict)
+        # still raises - that indicates a real construction bug, not sampling variance.
+        if 'resolvable threshold' in str(e):
+            return None, 'unresolvable_relief'
+        if 'max_lookup_distance' in str(e):
+            return None, 'horizon_lookup_gap'
+        raise
 
     # Hilbert transform can't handle NaN gaps (real survey-edge missing traces) - fill with 0
     # before computing attributes; the mask below is unaffected (footprint is a geometric property).
@@ -241,7 +257,8 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
             cache_xl_axis = np.arange(cache_xl_lo, cache_xl_hi + 1)
             cached_subvol = _read_subvolume(f, iline_map, cache_inline_axis, cache_xl_axis, samples_ms.size)
 
-            skip_counts[split_name] = {'il_xl_bounds': 0, 'time_bounds': 0, 'footprint_exceeds_patch': 0}
+            skip_counts[split_name] = {'il_xl_bounds': 0, 'time_bounds': 0, 'footprint_exceeds_patch': 0,
+                                        'unresolvable_relief': 0, 'horizon_lookup_gap': 0}
             for kwargs, label in scenarios:
                 result, skip_reason = generate_example(
                     kwargs, label, cached_subvol, cache_inline_axis, cache_xl_axis, samples_ms,
