@@ -1,3 +1,4 @@
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """
 Real horizon geometry for structural conformance in DHI injection.
 

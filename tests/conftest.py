@@ -1,3 +1,4 @@
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Shared fixtures for the injection.py regression tests (F1/F2/F3, blind-test integrity).
 
 Uses small synthetic grids and duck-typed fake horizons rather than real F3 data - these

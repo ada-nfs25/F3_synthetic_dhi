@@ -1,3 +1,4 @@
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """
 Seismic attribute computation for dataset patches.
 

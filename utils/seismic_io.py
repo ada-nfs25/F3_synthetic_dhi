@@ -1,3 +1,4 @@
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """
 Utility functions for reading F3 SEG-Y data using segyio. 
 Handles the non-rectangular survey geometry via built trace index. 

@@ -1,3 +1,4 @@
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """
 Real (non-synthetic) DHI examples from the F3 Demo project's own expert
 interpretation - OpendTect PickSet files `Chimneys_yes.pck`/`Chimneys_no.pck`

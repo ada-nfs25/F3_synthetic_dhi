@@ -1,3 +1,4 @@
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """F1 regression: the flat spot must be flat (an absolute contact time, not an offset
 below the dipping top), present only updip of the contact, and refuse to place an
 unresolvable one. See colleague-pipeline-review-2026-07-28.md F1 / fixes-2026-07-29.md F1.
