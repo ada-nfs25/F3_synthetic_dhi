@@ -8,3 +8,4 @@ data/attributes/
 data/dataset/
 data/segy_export/
 .pytest_cache/
+/data_raw

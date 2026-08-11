@@ -1,0 +1,4 @@
+[core]
+    remote = storage
+['remote "storage"']
+    url = /Users/nfs25/Library/CloudStorage/OneDrive-ImperialCollegeLondon/dvc-storage
