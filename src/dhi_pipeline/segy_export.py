@@ -70,7 +70,14 @@ def export_scenario_to_segy(kwargs, label, f, iline_map, inlines, xlines, horizo
     spec = segyio.spec()
     spec.samples = f.samples
     spec.tracecount = n_traces
-    spec.format = f.format
+    # Schema v1.1: always write IEEE float (SEG-Y format 5), not the source
+    # survey's format (int16, format 3). int16 quantises amplitude on export,
+    # an uncontrolled difference between blind-exchange datasets since the
+    # other side's own export is float - subtle-tier deltas and taper skirts
+    # get rounded to integer counts on this side only. Free to remove since
+    # amplitudes here are in the thousands (see estimate_amplitude_scale) -
+    # agreed with Aziz, see colleague-notes-2026-08-09.md.
+    spec.format = segyio.SegySampleFormat.IEEE_FLOAT_4_BYTE
     spec.sorting = segyio.TraceSortingFormat.CROSSLINE_SORTING
 
     with segyio.create(str(output_path), spec) as dst:
@@ -88,7 +95,7 @@ def export_scenario_to_segy(kwargs, label, f, iline_map, inlines, xlines, horizo
                         segyio.TraceField.INLINE_3D: int(il),
                         segyio.TraceField.CROSSLINE_3D: int(xl),
                     }
-                dst.trace[trace_i] = injected_filled[i, j].astype(f.dtype)
+                dst.trace[trace_i] = injected_filled[i, j].astype(np.float32)
                 trace_i += 1
 
     return output_path

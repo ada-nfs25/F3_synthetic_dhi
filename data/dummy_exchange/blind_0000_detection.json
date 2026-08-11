@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "note": "DUMMY detection - values are illustrative placeholders for format-testing (C5 protocol), not a real model output",
   "detector_side": "nora",
   "blind_id": "blind_0000",
@@ -17,6 +17,7 @@
   "is_dhi": true,
   "predicted_tier": "tier3_at_tuning",
   "confidence": 0.82,
+  "predicted_time_ms": 216.0,
   "localisation_mask": {
     "axis_convention": "map-view (il, xl), indices local to this patch (0,0) = (il_origin, xl_origin)",
     "shape": [
