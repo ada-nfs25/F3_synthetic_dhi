@@ -21,7 +21,22 @@ independently-authored work.
   demo.
 
 ## Data dependencies
-Reads directly from the F3 Demo 2023 dataset and Zenodo interpretation
-labels (paths hardcoded in the notebook, same locations as the companion
-IRP repo's `data/README.md`). `data/*.pkl` are regeneratable local caches
-(trace geometry, horizon coordinate lookup) - gitignored, not checked in.
+Raw inputs (F3 Demo 2023 SEG-Y volume, Zenodo interpretation horizons/masks,
+velocity functions, AI cube, well logs, and the real bright-spot pick) are
+DVC-tracked in `data_raw/` - see `data_raw/README.md` for sources, sizes,
+and which files are actually required by `build_dataset()` vs.
+exploratory-only. Not committed to git directly; pull with:
+
+```bash
+pip install -r requirements.txt
+dvc pull
+```
+
+**Caveat:** the DVC remote (`.dvc/config`) is a local path inside this
+machine's synced Imperial College OneDrive folder, so `dvc pull` currently
+only works for someone with access to that same shared folder - not a cold
+clone from an arbitrary machine.
+
+`data/*.pkl` are regeneratable local caches (trace geometry, horizon
+coordinate lookup) - gitignored, not checked in, rebuilt automatically by
+the notebooks.
