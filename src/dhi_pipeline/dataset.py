@@ -127,12 +127,17 @@ def generate_example(kwargs, label, cached_subvol, cache_inline_axis, cache_xl_a
     patch_time_axis_ms = full_time_axis_ms[t_mask]
     raw_patch = raw[:, :, t_mask]
 
+    is_background = label.get('kind') == 'background'
     amp_scale = estimate_amplitude_scale(raw_patch, reference_rc=reference_rc)
     try:
-        injected, twt_thickness_ms = inject_dhi_anomaly_3d(
-            raw_patch, patch_time_axis_ms, patch_inline_axis, patch_xl_axis, horizon,
-            amplitude_scale=amp_scale, **kwargs,
-        )
+        if is_background:
+            injected = raw_patch.copy()
+            twt_thickness_ms = 0.0
+        else:
+            injected, twt_thickness_ms = inject_dhi_anomaly_3d(
+                raw_patch, patch_time_axis_ms, patch_inline_axis, patch_xl_axis, horizon,
+                amplitude_scale=amp_scale, **kwargs,
+            )
     except ValueError as e:
         # F4's smaller footprints make two of inject_dhi_anomaly_3d's own validity checks
         # much more likely to fire on an otherwise-legitimate random scenario draw: a
@@ -155,15 +160,27 @@ def generate_example(kwargs, label, cached_subvol, cache_inline_axis, cache_xl_a
     attribute_stack, channel_names = compute_attribute_stack(injected_filled, dt_ms / 1000.0)
     attribute_stack = attribute_stack.astype(np.float32)
 
-    mask = compute_footprint_mask(patch_inline_axis, patch_xl_axis, il_center, xl_center,
-                                   kwargs['il_radius'], kwargs['xl_radius'], kwargs.get('rotation_deg', 0.0))
+    if is_background:
+        mask = np.zeros(raw_patch.shape[:2], dtype=bool)
+        mask_3d = np.zeros(raw_patch.shape, dtype=bool)
+    else:
+        mask = compute_footprint_mask(patch_inline_axis, patch_xl_axis, il_center, xl_center,
+                                      kwargs['il_radius'], kwargs['xl_radius'], kwargs.get('rotation_deg', 0.0))
+        # Replay the exact injection against zero background. This uses the injection
+        # implementation itself as the mask authority and therefore stays aligned with
+        # flat spots, polarity reversals, single reflectors and the wedge geometry.
+        mask_volume, _ = inject_dhi_anomaly_3d(
+            np.zeros_like(raw_patch), patch_time_axis_ms, patch_inline_axis, patch_xl_axis,
+            horizon, amplitude_scale=amp_scale, **kwargs,
+        )
+        mask_3d = mask_volume != 0
 
     peak_amplitude = float(np.nanmax(np.abs(injected - raw_patch)))
     # Ground truth for the sag/pull-down attribute (Nanda 2021) - mirrors inject_dhi_anomaly_3d's
     # own internal calculation rather than changing its return signature. Applies uniformly
     # across positives and hard negatives alike: sag depends on velocity contrast + thickness,
     # both shared by hard negatives per their design (see scenarios.py), not on structural realism.
-    sag_shift_ms = (
+    sag_shift_ms = 0.0 if is_background else (
         sag_time_shift_ms(kwargs['thickness_m'], kwargs.get('v_gas_mps') or V_GAS_SAND, kwargs['velocity_mps'])
         if kwargs.get('apply_sag', True) else 0.0
     )
@@ -172,13 +189,34 @@ def generate_example(kwargs, label, cached_subvol, cache_inline_axis, cache_xl_a
                        n_missing_traces=n_missing, peak_amplitude=peak_amplitude,
                        il_radius=kwargs['il_radius'], xl_radius=kwargs['xl_radius'],
                        rotation_deg=kwargs.get('rotation_deg', 0.0), sag_shift_ms=sag_shift_ms)
-    return dict(attribute_stack=attribute_stack, channel_names=channel_names, mask=mask, label=full_label), None
+    return dict(attribute_stack=attribute_stack, channel_names=channel_names, mask=mask,
+                mask_3d=mask_3d, label=full_label), None
+
+
+def _balanced_sites(sites, count, rng):
+    """Return ``count`` sites in shuffled round-robin order.
+
+    Each scenario class calls this independently, so when ``count`` is at least
+    the number of valid sites, every site contains every geologically valid class.
+    """
+    if count == 0:
+        return []
+    if len(sites) == 0:
+        raise ValueError('cannot sample from an empty site table')
+    selected = []
+    while len(selected) < count:
+        for idx in rng.permutation(len(sites)):
+            selected.append(sites.iloc[idx])
+            if len(selected) == count:
+                break
+    return selected
 
 
 def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
                    dt_ms, velocity_mps, freq_hz, train_inline_range, test_inline_range,
                    structural_highs, structural_lows, n_per_tier=3, n_hard_negatives_per_kind=3,
                    seed=0, il_extent=96, xl_extent=96, time_extent_ms=500,
+                   n_background_per_site=1,
                    max_skip_rate=0.5):
     """
     Generate a full patch+label dataset: n_per_tier positive examples per
@@ -231,16 +269,40 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
 
             scenarios = []
             for tier in TIER_RANGES:
-                for _ in range(n_per_tier):
-                    scenarios.append(sample_positive_scenario(tier, rng, split_highs, velocity_mps, freq_hz))
+                for site in _balanced_sites(split_highs, n_per_tier, rng):
+                    scenarios.append(sample_positive_scenario(
+                        tier, rng, split_highs, velocity_mps, freq_hz, site=site,
+                    ))
             for kind in HARD_NEGATIVE_KINDS:
                 if kind == 'syncline' and len(split_lows) == 0:
                     continue
-                for _ in range(n_hard_negatives_per_kind):
+                valid_sites = split_lows if kind == 'syncline' else split_highs
+                for site in _balanced_sites(valid_sites, n_hard_negatives_per_kind, rng):
                     scenarios.append(sample_hard_negative_scenario(
                         kind, rng, split_highs, split_lows, velocity_mps, freq_hz,
-                        flat_background_time_ms=1400,
+                        flat_background_time_ms=1400, site=site,
                     ))
+
+            # Paired clean-background controls at every geological site. These are
+            # extracted from the untouched SEG-Y at the same centre/time as the
+            # injections, which prevents location/background texture becoming a
+            # shortcut for the class label.
+            background_sites = pd.concat([split_highs, split_lows], ignore_index=True) \
+                .drop_duplicates(subset=['inline', 'crossline'])
+            for _, site in background_sites.iterrows():
+                for _ in range(n_background_per_site):
+                    kwargs = dict(
+                        velocity_mps=velocity_mps, freq_hz=freq_hz, thickness_m=0.0,
+                        il_center=site['inline'], xl_center=site['crossline'],
+                        il_radius=np.nan, xl_radius=np.nan, rotation_deg=0.0,
+                    )
+                    label = dict(
+                        is_dhi=False, kind='background', tier='background',
+                        il_center=site['inline'], xl_center=site['crossline'],
+                        thickness_m=0.0, reflection_coefficient=0.0,
+                        flat_spot=False, polarity_reversal=False,
+                    )
+                    scenarios.append((kwargs, label))
 
             # F10: read this split's working sub-volume once - the union of every
             # sampled scenario's patch, clipped to the survey's actual valid range -
@@ -273,7 +335,7 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
                 np.savez_compressed(os.path.join(patches_dir, fname),
                                      attribute_stack=result['attribute_stack'],
                                      channel_names=np.array(result['channel_names']),
-                                     mask=result['mask'])
+                                     mask=result['mask'], mask_3d=result['mask_3d'])
                 row = dict(result['label'], example_id=example_id, split=split_name, patch_file=fname)
                 rows.append(row)
                 example_id += 1
