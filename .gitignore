@@ -10,3 +10,5 @@ data/segy_export/
 .pytest_cache/
 /data_raw/*
 !/data_raw/README.md
+# Generated synthetic datasets
+data/F3_synthetic_dhi_dataset*/
