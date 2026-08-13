@@ -53,7 +53,7 @@ def _sample_footprint(rng):
     )
 
 
-def sample_positive_scenario(tier_name, rng, structural_highs, velocity_mps, freq_hz):
+def sample_positive_scenario(tier_name, rng, structural_highs, velocity_mps, freq_hz, site=None):
     """
     Sample a randomised positive-example scenario for a given severity tier,
     at a randomly chosen real structural high.
@@ -62,7 +62,7 @@ def sample_positive_scenario(tier_name, rng, structural_highs, velocity_mps, fre
     Returns (injection_kwargs, label).
     """
     ranges = TIER_RANGES[tier_name]
-    site = structural_highs.iloc[rng.integers(len(structural_highs))]
+    site = structural_highs.iloc[rng.integers(len(structural_highs))] if site is None else site
 
     thickness_m = rng.uniform(*ranges['thickness_range'])
     rc_frac = rng.uniform(*ranges['rc_frac_range'])
@@ -86,7 +86,7 @@ def sample_positive_scenario(tier_name, rng, structural_highs, velocity_mps, fre
 
 
 def sample_hard_negative_scenario(kind, rng, structural_highs, structural_lows,
-                                   velocity_mps, freq_hz, flat_background_time_ms=None):
+                                   velocity_mps, freq_hz, flat_background_time_ms=None, site=None):
     """
     Sample a randomised hard-negative scenario: same amplitude/polarity
     machinery as a positive example, deliberately placed without genuine
@@ -139,24 +139,24 @@ def sample_hard_negative_scenario(kind, rng, structural_highs, structural_lows,
     if kind == 'no_conformance':
         if flat_background_time_ms is None:
             raise ValueError("kind='no_conformance' needs flat_background_time_ms")
-        site = structural_highs.iloc[rng.integers(len(structural_highs))]  # location still needs an il/xl centre
+        site = structural_highs.iloc[rng.integers(len(structural_highs))] if site is None else site
         kwargs = dict(base_kwargs, il_center=site['inline'], xl_center=site['crossline'],
                       flat_top_time_ms=flat_background_time_ms)
         label.update(il_center=site['inline'], xl_center=site['crossline'])
 
     elif kind == 'syncline':
-        site = structural_lows.iloc[rng.integers(len(structural_lows))]
+        site = structural_lows.iloc[rng.integers(len(structural_lows))] if site is None else site
         kwargs = dict(base_kwargs, il_center=site['inline'], xl_center=site['crossline'])
         label.update(il_center=site['inline'], xl_center=site['crossline'])
 
     elif kind == 'single_reflector':
-        site = structural_highs.iloc[rng.integers(len(structural_highs))]
+        site = structural_highs.iloc[rng.integers(len(structural_highs))] if site is None else site
         kwargs = dict(base_kwargs, il_center=site['inline'], xl_center=site['crossline'],
                       single_reflector=True)
         label.update(il_center=site['inline'], xl_center=site['crossline'])
 
     elif kind == 'tuning':
-        site = structural_highs.iloc[rng.integers(len(structural_highs))]
+        site = structural_highs.iloc[rng.integers(len(structural_highs))] if site is None else site
         kwargs = dict(base_kwargs, il_center=site['inline'], xl_center=site['crossline'])
         label.update(il_center=site['inline'], xl_center=site['crossline'])
 
