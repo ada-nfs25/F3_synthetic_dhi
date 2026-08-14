@@ -304,6 +304,26 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
                     )
                     scenarios.append((kwargs, label))
 
+            # no_conformance examples live at a fixed 1400 ms rather than at the
+            # interpreted horizon. Add controls at that same time as well: at a
+            # few sites the horizon-centred background is outside the valid time
+            # window even though the fixed-time non-conformant example is valid.
+            for _, site in split_highs.iterrows():
+                for _ in range(n_background_per_site):
+                    kwargs = dict(
+                        velocity_mps=velocity_mps, freq_hz=freq_hz, thickness_m=0.0,
+                        il_center=site['inline'], xl_center=site['crossline'],
+                        il_radius=np.nan, xl_radius=np.nan, rotation_deg=0.0,
+                        flat_top_time_ms=1400,
+                    )
+                    label = dict(
+                        is_dhi=False, kind='background', tier='background',
+                        il_center=site['inline'], xl_center=site['crossline'],
+                        thickness_m=0.0, reflection_coefficient=0.0,
+                        flat_spot=False, polarity_reversal=False,
+                    )
+                    scenarios.append((kwargs, label))
+
             # F10: read this split's working sub-volume once - the union of every
             # sampled scenario's patch, clipped to the survey's actual valid range -
             # rather than re-reading the same overlapping traces per example. Only
