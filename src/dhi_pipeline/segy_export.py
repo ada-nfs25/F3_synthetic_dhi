@@ -81,7 +81,16 @@ def export_scenario_to_segy(kwargs, label, f, iline_map, inlines, xlines, horizo
     spec.sorting = segyio.TraceSortingFormat.CROSSLINE_SORTING
 
     with segyio.create(str(output_path), spec) as dst:
+        # dst.bin = f.bin copies the *whole* source binary header wholesale,
+        # including its Format field (int16, code 3) - silently reverting the
+        # spec.format = IEEE_FLOAT_4_BYTE set above. Traces are still written
+        # as float32 either way, so the header would then lie about the
+        # on-disk format: segyio computes trace length from the declared
+        # format's byte width, so a file with a float-sized trace but an
+        # int16-declared header fails to reopen ("trace count inconsistent
+        # with file size"). Re-assert the format field after the bulk copy.
         dst.bin = f.bin
+        dst.bin[segyio.BinField.Format] = segyio.SegySampleFormat.IEEE_FLOAT_4_BYTE
         trace_i = 0
         for i, il in enumerate(patch_inline_axis):
             for j, xl in enumerate(patch_xl_axis):
