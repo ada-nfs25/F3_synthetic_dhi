@@ -71,7 +71,24 @@ def compute_sweetness(data, dt_s):
     return rms / np.maximum(np.sqrt(np.abs(inst_freq)), 1e-6)
 
 
-def compute_band_ratio(data, dt_s, low_freq=15.0, high_freq=45.0, bandwidth=6.0):
+def estimate_dominant_frequency(data, dt_s, min_freq_hz=5.0):
+    """
+    FFT-based dominant frequency: mean amplitude spectrum across every trace
+    in `data` (any leading shape, last axis = time), Hann-tapered and
+    demeaned, ignoring near-DC bins (short-window spectral leakage, not a
+    real dominant frequency - same convention as the survey-level
+    calibration in scripts/regenerate_p0_dataset.py and
+    notebooks/synthetic_dhi_generation.ipynb).
+    """
+    flat = data.reshape(-1, data.shape[-1])
+    tapered = (flat - flat.mean(axis=-1, keepdims=True)) * np.hanning(flat.shape[-1])
+    n_fft = max(512, flat.shape[-1])
+    freqs = np.fft.rfftfreq(n_fft, d=dt_s)
+    spectrum = np.abs(np.fft.rfft(tapered, n=n_fft, axis=-1)).mean(axis=0)
+    return float(freqs[np.argmax(spectrum * (freqs >= min_freq_hz))])
+
+
+def compute_band_ratio(data, dt_s, dominant_freq_hz=None, low_frac=0.25, high_frac=0.75, bandwidth=6.0):
     """
     Bounded [-1, 1] spectral contrast: (low-band envelope - high-band
     envelope) / (low-band envelope + high-band envelope + eps), along the
@@ -80,7 +97,26 @@ def compute_band_ratio(data, dt_s, low_freq=15.0, high_freq=45.0, bandwidth=6.0)
     dominates. Unlike raw envelope or RMS, this is a genuine ratio and so
     doesn't carry the survey's arbitrary amplitude gain - see the module
     docstring.
+
+    dominant_freq_hz: survey-adaptive band anchor (Round 2, P1 item 2,
+    Aziz - "fixed 15/45Hz bands sit below the dominant band in shallower
+    data"): low_freq = low_frac*dominant_freq_hz, high_freq =
+    high_frac*dominant_freq_hz, instead of fixed absolute Hz values that only
+    mean what they're supposed to at whatever frequency they were originally
+    tuned against. If None (default), estimated directly from `data` itself
+    (see estimate_dominant_frequency) - "the measured dominant frequency of
+    whatever volume is being processed", not a pre-supplied constant, so this
+    adapts per depth band/survey with no caller-side plumbing required.
+    low_frac=0.25/high_frac=0.75 are chosen so this is numerically IDENTICAL
+    to the previous fixed 15/45Hz bands whenever dominant_freq_hz is ~60Hz
+    (this survey's own measured value) - a generalisation of the existing
+    behaviour, not a change to it, for every already-generated H1 example.
     """
+    if dominant_freq_hz is None:
+        dominant_freq_hz = estimate_dominant_frequency(data, dt_s)
+    low_freq = low_frac * dominant_freq_hz
+    high_freq = high_frac * dominant_freq_hz
+
     def band_envelope(center_freq):
         f_lo, f_hi = center_freq - bandwidth / 2, center_freq + bandwidth / 2
         sos = butter(4, [f_lo, f_hi], btype='bandpass', fs=1.0 / dt_s, output='sos')
