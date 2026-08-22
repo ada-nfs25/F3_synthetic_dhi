@@ -34,6 +34,15 @@ TIER_RANGES = {
                              flat_spot_prob=0.30, polarity_reversal_prob=0.30),
     'tier4_obvious': dict(thickness_range=(11.0, 18.0), rc_frac_range=(0.90, 1.00),
                            flat_spot_prob=0.70, polarity_reversal_prob=0.70),
+    # Round 2, P0 item 2 (Aziz, ROUND2_PLAN.md): a genuine resolved-bed regime,
+    # explicitly beyond what tier4 already covers (11-18m / ~1.56x-2.55x our
+    # ~7.05m empirical tuning thickness) rather than overlapping it - picks up
+    # where tier4 leaves off on the wedge-tuning curve's thinning limb, so the
+    # training set has real coverage further past the tuning peak than it did
+    # before. Same cue pattern as tier4 (full contrast, usually flat spot +
+    # polarity reversal) since severity here is about thickness, not weaker cues.
+    'tier5_resolved': dict(thickness_range=(18.0, 26.0), rc_frac_range=(0.90, 1.00),
+                            flat_spot_prob=0.70, polarity_reversal_prob=0.70),
 }
 
 FOOTPRINT_RADIUS_RANGE = (6, 15)  # traces, both il and xl radius sampled independently

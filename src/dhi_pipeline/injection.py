@@ -492,4 +492,12 @@ SEVERITY_TIERS = {
         flat_spot=True,
         polarity_reversal=True,
     ),
+    # Round 2, P0 item 2: genuine resolved-bed regime beyond tier4 - see
+    # scenarios.py's TIER_RANGES for the continuous range this centres.
+    'tier5_resolved': dict(
+        thickness_m=22.0,
+        reflection_coefficient=RC_GAS_SAND * 1.00,
+        flat_spot=True,
+        polarity_reversal=True,
+    ),
 }
