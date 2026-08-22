@@ -12,3 +12,6 @@ data/segy_export/
 !/data_raw/README.md
 # Generated synthetic datasets
 data/F3_synthetic_dhi_dataset*/
+external/
+# Reverse-leg blind exchange: private answer key + large .sgy files
+data/round2_reverse_leg/
