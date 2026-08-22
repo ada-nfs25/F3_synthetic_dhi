@@ -15,6 +15,7 @@ during training-set generation.
 """
 
 import os
+import shutil
 import warnings
 
 import numpy as np
@@ -217,7 +218,7 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
                    structural_highs, structural_lows, n_per_tier=3, n_hard_negatives_per_kind=3,
                    seed=0, il_extent=96, xl_extent=96, time_extent_ms=500,
                    n_background_per_site=1,
-                   max_skip_rate=0.5):
+                   max_skip_rate=0.5, min_free_bytes=2 * 1024 ** 3):
     """
     Generate a full patch+label dataset: n_per_tier positive examples per
     severity tier, n_hard_negatives_per_kind per hard-negative type, for
@@ -239,6 +240,15 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
     F10: reads the working sub-volume for each split into memory once
     (`_read_subvolume`), rather than re-reading the same overlapping traces
     from SEG-Y for every example - see `generate_example`.
+
+    min_free_bytes: stop writing new patches (gracefully - keep what's
+    written, return the labels table built so far, print a warning) once
+    free disk space on output_dir's filesystem drops below this. Checked
+    before every write. Without this, running out of mid-write disk space
+    raises OSError from inside np.savez_compressed and can leave a truncated
+    .npz file behind - hit three times in a row during round-2 P0 generation
+    (H3/dim_spot runs), hence this guard rather than trusting scenario-count
+    estimates to stay under whatever happens to be free.
     """
     valid_il_band = len(inlines) - il_extent
     valid_xl_band = len(xlines) - xl_extent
@@ -342,7 +352,16 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
 
             skip_counts[split_name] = {'il_xl_bounds': 0, 'time_bounds': 0, 'footprint_exceeds_patch': 0,
                                         'unresolvable_relief': 0, 'horizon_lookup_gap': 0}
+            low_disk_stop = False
             for kwargs, label in scenarios:
+                if shutil.disk_usage(patches_dir).free < min_free_bytes:
+                    warnings.warn(
+                        f'stopping early in split "{split_name}": free disk space fell below '
+                        f'{min_free_bytes / 1024**3:.1f}GB after {example_id} example(s) written. '
+                        f'Returning what was generated so far rather than risk a mid-write crash.'
+                    )
+                    low_disk_stop = True
+                    break
                 result, skip_reason = generate_example(
                     kwargs, label, cached_subvol, cache_inline_axis, cache_xl_axis, samples_ms,
                     horizon, dt_ms, il_extent, xl_extent, time_extent_ms,
@@ -359,6 +378,9 @@ def build_dataset(output_dir, segy_path, iline_map, inlines, xlines, horizon,
                 row = dict(result['label'], example_id=example_id, split=split_name, patch_file=fname)
                 rows.append(row)
                 example_id += 1
+
+            if low_disk_stop:
+                break
 
     labels = pd.DataFrame(rows)
 
