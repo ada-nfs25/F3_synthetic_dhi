@@ -31,8 +31,15 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from src.dhi_pipeline.attributes import compute_attribute_stack  # noqa: E402
+from src.dhi_pipeline.attributes import compute_attribute_stack, compute_band_ratio  # noqa: E402
 from src.dhi_pipeline.ratio_features import ratio_features_from_stack  # noqa: E402
+
+V1_STYLE_DOMINANT_FREQ_HZ = 60.0
+"""compute_band_ratio's low_frac=0.25/high_frac=0.75 defaults reproduce the
+old fixed 15/45Hz bands exactly at dominant_freq_hz=60.0 (this survey's own
+measured value) - see attributes.compute_band_ratio's docstring. Passing
+this explicitly, instead of auto-estimating, gives the v1-style band_ratio
+channel for the ablation below without needing a second code path."""
 
 DATASETS = {
     'H1': 'F3_synthetic_dhi_dataset_p0_radius6_15',
@@ -42,7 +49,8 @@ DATASETS = {
 OUT_DIR = REPO / 'data' / 'v2_features'
 FEATURES_CACHE_PATH = OUT_DIR / 'ratio_features_v2_cache.parquet'
 CACHE_KEY_PATH = OUT_DIR / 'ratio_features_v2_cache_key.json'
-CACHE_KEY = dict(feature_version='v2_p1fixed_14feature', doublet_lags=list(range(1, 6)))
+CACHE_KEY = dict(feature_version='v2_p1fixed_14feature_plus_v1_style_ablation',
+                  doublet_lags=list(range(1, 6)), v1_style_dominant_freq_hz=V1_STYLE_DOMINANT_FREQ_HZ)
 
 
 def load_combined_labels():
@@ -73,10 +81,28 @@ def load_combined_labels():
 
 
 def compute_patch_features(patch_path):
+    """
+    Returns the v2 candidate 14 features (adaptive band_ratio, swept-lag
+    doublet) plus a v1_style_-prefixed ablation set (fixed-60Hz band_ratio,
+    lag-1 doublet - i.e. v1's exact feature definitions) computed on the
+    SAME patch, so LOSO can compare old-vs-new feature definitions fairly on
+    the new P0-diversified data rather than on v1's original thin-bed-only
+    training set (Aziz, ROUND2_PLAN.md P1 item 1: "your earlier rejection
+    was measured on the thin-bed-only training set... re-evaluate on the
+    diversified set from P0, not the old one").
+    """
     data = np.load(patch_path)
     amplitude = data['attribute_stack'][list(data['channel_names']).index('amplitude')]
+
     stack, channel_names = compute_attribute_stack(amplitude, dt_s=0.004)
-    return ratio_features_from_stack(stack, channel_names)
+    v2_features = ratio_features_from_stack(stack, channel_names)
+
+    v1_style_stack = stack.copy()
+    v1_style_stack[channel_names.index('band_ratio')] = compute_band_ratio(
+        amplitude, dt_s=0.004, dominant_freq_hz=V1_STYLE_DOMINANT_FREQ_HZ)
+    v1_style_features = ratio_features_from_stack(v1_style_stack, channel_names, doublet_lags=(1,))
+
+    return {**v2_features, **{f'v1style_{k}': v for k, v in v1_style_features.items()}}
 
 
 def main():
