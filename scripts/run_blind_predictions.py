@@ -22,6 +22,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from src.dhi_pipeline.attributes import compute_attribute_stack  # noqa: E402
+from src.dhi_pipeline.calibration import rank_quantile  # noqa: E402
 
 FEATURE_CHANNELS = ['envelope', 'sweetness', 'inst_freq', 'band_ratio']
 NEAR_TOP_HALF_MS = 60
@@ -111,12 +112,21 @@ def main():
             'schema_version': '1.1',
             'detector_side': 'nora',
             'blind_id': patch_id,
-            'is_dhi': bool(proba >= 0.5),
             'tier': None,
             'confidence': proba,
             'predicted_time_ms': center_time_ms,
         })
-        print(f'{patch_id}: confidence={proba:.4f} is_dhi={proba >= 0.5}')
+
+    # Round 2, P1 item 3: the raw 0.5 threshold has failed twice (LOSO, round-1
+    # blind) on per-volume score offsets - decide is_dhi from the within-batch
+    # rank instead (median split: top half of this batch by score), and keep
+    # the raw confidence in the output for audit rather than discarding it.
+    quantiles = rank_quantile([r['confidence'] for r in results])
+    for result, q in zip(results, quantiles):
+        result['rank_quantile'] = float(q)
+        result['is_dhi'] = bool(q >= 0.5)
+        print(f"{result['blind_id']}: confidence={result['confidence']:.4f} "
+              f"rank_quantile={q:.3f} is_dhi={result['is_dhi']}")
 
     out_path = blind_dir / 'nora_detections_round1.json'
     out_path.write_text(json.dumps(results, indent=2) + '\n')
