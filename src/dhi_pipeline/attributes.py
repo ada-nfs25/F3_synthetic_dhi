@@ -71,7 +71,7 @@ def compute_sweetness(data, dt_s):
     return rms / np.maximum(np.sqrt(np.abs(inst_freq)), 1e-6)
 
 
-def estimate_dominant_frequency(data, dt_s, min_freq_hz=5.0):
+def estimate_dominant_frequency(data, dt_s, min_freq_hz=5.0, window_ms=150.0):
     """
     FFT-based dominant frequency: mean amplitude spectrum across every trace
     in `data` (any leading shape, last axis = time), Hann-tapered and
@@ -79,8 +79,24 @@ def estimate_dominant_frequency(data, dt_s, min_freq_hz=5.0):
     real dominant frequency - same convention as the survey-level
     calibration in scripts/regenerate_p0_dataset.py and
     notebooks/synthetic_dhi_generation.ipynb).
+
+    Estimated over a `window_ms`-wide central time window, not the full
+    input - same reason calibration() above only ever used a ~150ms
+    reference window rather than a whole patch: a long real-data window
+    mixes in low-frequency structural/geological trend content that
+    dominates the spectrum over the wavelet's own frequency (measured
+    directly - a 500ms dim_spot patch gave an ~8.8Hz "dominant" frequency
+    this way, nowhere near this survey's actual ~60Hz, and drove
+    compute_band_ratio's derived low_freq/bandwidth negative). A short
+    central window is much closer to what calibration()'s own narrow
+    reference window measures.
     """
-    flat = data.reshape(-1, data.shape[-1])
+    n_time = data.shape[-1]
+    window_samples = min(n_time, max(1, int(round(window_ms / 1000.0 / dt_s))))
+    lo = (n_time - window_samples) // 2
+    windowed = data[..., lo:lo + window_samples]
+
+    flat = windowed.reshape(-1, windowed.shape[-1])
     tapered = (flat - flat.mean(axis=-1, keepdims=True)) * np.hanning(flat.shape[-1])
     n_fft = max(512, flat.shape[-1])
     freqs = np.fft.rfftfreq(n_fft, d=dt_s)
@@ -114,8 +130,9 @@ def compute_band_ratio(data, dt_s, dominant_freq_hz=None, low_frac=0.25, high_fr
     """
     if dominant_freq_hz is None:
         dominant_freq_hz = estimate_dominant_frequency(data, dt_s)
-    low_freq = low_frac * dominant_freq_hz
-    high_freq = high_frac * dominant_freq_hz
+    nyquist = 0.5 / dt_s
+    low_freq = np.clip(low_frac * dominant_freq_hz, bandwidth / 2 + 0.5, nyquist - bandwidth / 2 - 0.5)
+    high_freq = np.clip(high_frac * dominant_freq_hz, low_freq + bandwidth, nyquist - bandwidth / 2 - 0.5)
 
     def band_envelope(center_freq):
         f_lo, f_hi = center_freq - bandwidth / 2, center_freq + bandwidth / 2
