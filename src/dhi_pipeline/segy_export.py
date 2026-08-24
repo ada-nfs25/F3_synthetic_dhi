@@ -31,8 +31,17 @@ def export_scenario_to_segy(kwargs, label, f, iline_map, inlines, xlines, horizo
     """
     Inject one scenario onto a real sub-volume (full trace length, not the
     500ms window used for ML patches - more context for visual inspection)
-    and write it out as a standalone SEG-Y file, copying real trace headers
-    (inline/crossline/CDP X/Y/...) from the source survey.
+    and write it out as a standalone SEG-Y file.
+
+    Headers carry only a LOCAL 1..il_extent/1..xl_extent inline/crossline
+    (matching Aziz's own convention - see run_blind_predictions.py's
+    comment on his index.json), never the source survey's real INLINE_3D/
+    CROSSLINE_3D/CDP_X/CDP_Y/SourceX/SourceY/CDP/FieldRecord (this survey's
+    real headers were confirmed to carry the true coordinates in all of
+    those fields, not just the ones you'd expect). Round 2: Aziz flagged
+    that our real headers were only ever NOT differenced by his own
+    no-differencing rule, not by anything in the file itself - this is that
+    fix, so the rule isn't the only protection going forward.
 
     Returns the output path, or None if the sub-volume would run off the
     survey's valid il/xl range (same edge behaviour as generate_example).
@@ -97,13 +106,22 @@ def export_scenario_to_segy(kwargs, label, f, iline_map, inlines, xlines, horizo
                 src_idx = trace_indices[i, j]
                 if src_idx >= 0:
                     dst.header[trace_i] = f.header[src_idx]
-                else:
-                    # gap in the survey's acquisition outline - no real trace to copy headers
-                    # from; still write correct inline/crossline so the geometry stays valid
-                    dst.header[trace_i] = {
-                        segyio.TraceField.INLINE_3D: int(il),
-                        segyio.TraceField.CROSSLINE_3D: int(xl),
-                    }
+                # local 1..extent index, never the real il/xl - overwrites whatever
+                # was just copied above (or fills the acquisition-gap case, which
+                # previously used the real il/xl directly). CDP_X/Y, SourceX/Y, CDP
+                # and FieldRecord all carried real survey coordinates in this
+                # dataset's headers (confirmed directly, not assumed) - blanked so
+                # none of them leak real geometry either.
+                dst.header[trace_i].update({
+                    segyio.TraceField.INLINE_3D: i + 1,
+                    segyio.TraceField.CROSSLINE_3D: j + 1,
+                    segyio.TraceField.CDP_X: 0,
+                    segyio.TraceField.CDP_Y: 0,
+                    segyio.TraceField.SourceX: 0,
+                    segyio.TraceField.SourceY: 0,
+                    segyio.TraceField.CDP: 0,
+                    segyio.TraceField.FieldRecord: 0,
+                })
                 dst.trace[trace_i] = injected_filled[i, j].astype(np.float32)
                 trace_i += 1
 
