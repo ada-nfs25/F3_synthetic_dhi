@@ -31,6 +31,7 @@ from scripts.score_blind_round1 import _wilson_interval  # noqa: E402
 
 FEATURES_PATH = REPO / 'data' / 'v2_features' / 'v2_combined_features.parquet'
 MODEL_OUT_PATH = REPO / 'data' / 'v2_features' / 'xgboost_dhi_14feature_v2.json'
+SECONDARY_MODEL_OUT_PATH = REPO / 'data' / 'v2_features' / 'xgboost_dhi_14feature_v1style_secondary.json'
 LOSO_OUT_PATH = REPO / 'data' / 'v2_features' / 'v2_loso_predictions.csv'
 
 V2_FEATURE_COLS = [
@@ -127,7 +128,31 @@ def main():
     )
     final_model.fit(df[V2_FEATURE_COLS], y.astype(int))
     final_model.save_model(str(MODEL_OUT_PATH))
-    print(f'\nfit final model on all {len(df)} examples, saved to {MODEL_OUT_PATH}')
+    print(f'\nfit final PRIMARY model (v2/P1 features) on all {len(df)} examples, saved to {MODEL_OUT_PATH}')
+
+    # Declared secondary (Aziz, round-2 decision): same P0-diversified data,
+    # v1-style features (fixed band_ratio, lag-1 doublet) - same hyperparameters
+    # and full-data-fit discipline as the primary, so the two are comparable as
+    # a clean ablation rather than differing in anything but the feature set.
+    secondary_model = XGBClassifier(
+        n_estimators=300, max_depth=3, learning_rate=0.05,
+        subsample=0.8, colsample_bytree=0.8, min_child_weight=3, reg_lambda=2.0,
+        scale_pos_weight=n_neg / n_pos, eval_metric='logloss', random_state=1, n_jobs=-1,
+    )
+    # rename to the plain (unprefixed) names before fitting: the 'v1style_'
+    # prefix only exists to keep the two variants distinct as separate
+    # columns during the LOSO ablation above - the saved model itself must
+    # expose the same feature names as the primary (both operate on "the
+    # same 14 feature slots", just computed differently), or a scorer that
+    # loads both models and feeds them the same feature dict (e.g.
+    # score_round2_blind_set.py) breaks on a feature-name mismatch at
+    # blind-scoring time, not at this training step where it's cheap to catch.
+    X_secondary = df[V1_STYLE_FEATURE_COLS].rename(
+        columns=dict(zip(V1_STYLE_FEATURE_COLS, V2_FEATURE_COLS)))
+    secondary_model.fit(X_secondary, y.astype(int))
+    secondary_model.save_model(str(SECONDARY_MODEL_OUT_PATH))
+    print(f'fit final SECONDARY model (v1-style features) on all {len(df)} examples, '
+          f'saved to {SECONDARY_MODEL_OUT_PATH}')
 
     loso_output = df[['global_id', 'dataset_source', 'is_dhi', 'kind', 'tier',
                        'il_center', 'xl_center', 'site_id']].copy()
