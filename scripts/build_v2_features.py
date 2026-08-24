@@ -45,6 +45,7 @@ DATASETS = {
     'H1': 'F3_synthetic_dhi_dataset_p0_radius6_15',
     'H3': 'F3_synthetic_dhi_dataset_p0_h3_shallow',
     'dim_spot': 'F3_synthetic_dhi_dataset_p0_dim_spot',
+    'aziz_style': 'F3_synthetic_dhi_dataset_p0_aziz_style',
 }
 OUT_DIR = REPO / 'data' / 'v2_features'
 FEATURES_CACHE_PATH = OUT_DIR / 'ratio_features_v2_cache.parquet'
