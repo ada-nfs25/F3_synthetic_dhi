@@ -53,16 +53,30 @@ V2_FEATURE_COLS = [
 ]
 
 
-def compute_both_feature_sets(amplitude, dt_s):
-    stack, channel_names = compute_attribute_stack(amplitude, dt_s)
-    v2_features = ratio_features_from_stack(stack, channel_names)
-
+def compute_both_feature_sets(full_amplitude, dt_s, t_mask):
+    """
+    Round 2 (Aziz, index.json note): "take your 125-sample window centred on
+    center_time_ms AFTER computing attributes" - the opposite order from
+    round 1 (crop to 500ms, then compute). Attributes here are Hilbert-
+    transform/filter-based (envelope, inst_freq, band_ratio, ...), which have
+    edge artifacts on a short window; computing them on the full 463-sample
+    trace first gives real margin on both sides, then t_mask crops the
+    resulting STACK, not the raw amplitude. channel_names/ordering is
+    unaffected by cropping the time axis, so this is a straightforward swap
+    of what gets cropped, not a different attribute pipeline.
+    """
     from src.dhi_pipeline.attributes import compute_band_ratio
-    v1_style_stack = stack.copy()
-    v1_style_stack[channel_names.index('band_ratio')] = compute_band_ratio(
-        amplitude, dt_s=dt_s, dominant_freq_hz=V1_STYLE_DOMINANT_FREQ_HZ)
-    v1_style_features = ratio_features_from_stack(v1_style_stack, channel_names, doublet_lags=(1,))
 
+    full_stack, channel_names = compute_attribute_stack(full_amplitude, dt_s)
+    full_v1_style_band_ratio = compute_band_ratio(
+        full_amplitude, dt_s=dt_s, dominant_freq_hz=V1_STYLE_DOMINANT_FREQ_HZ)
+
+    stack = full_stack[:, :, :, t_mask]
+    v1_style_stack = stack.copy()
+    v1_style_stack[channel_names.index('band_ratio')] = full_v1_style_band_ratio[:, :, t_mask]
+
+    v2_features = ratio_features_from_stack(stack, channel_names)
+    v1_style_features = ratio_features_from_stack(v1_style_stack, channel_names, doublet_lags=(1,))
     return v2_features, v1_style_features
 
 
@@ -77,9 +91,9 @@ def predict_blind_patch(sgy_path, center_time_ms, primary_model, secondary_model
 
     t_mask = (full_time_axis_ms >= center_time_ms - time_extent_ms / 2) & \
              (full_time_axis_ms <= center_time_ms + time_extent_ms / 2)
-    cropped = raw[:, :, t_mask].astype(np.float32)
+    full_amplitude = raw.astype(np.float32)
 
-    v2_features, v1_style_features = compute_both_feature_sets(cropped, dt_ms / 1000.0)
+    v2_features, v1_style_features = compute_both_feature_sets(full_amplitude, dt_ms / 1000.0, t_mask)
 
     X_primary = pd.DataFrame([v2_features])[feature_names]
     X_secondary = pd.DataFrame([v1_style_features])[feature_names]
