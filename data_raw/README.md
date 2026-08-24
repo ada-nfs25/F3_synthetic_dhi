@@ -6,7 +6,7 @@ Raw inputs for the synthetic/real DHI extraction pipeline. DVC-tracked (`data_ra
 dvc pull
 ```
 
-**Caveat:** the DVC remote (`.dvc/config`) points at a path inside this machine's synced Imperial College OneDrive folder. That means `dvc pull` only works on a machine with access to that same shared folder — not universally reproducible by an arbitrary clone of this repo. See project notes for the reproducibility tradeoff.
+**Access:** the DVC remote (`.dvc/config`) is this project's storage on Imperial's CX3 HPC cluster, reached over SSH with your own CX3 password (CX3 doesn't support SSH key auth). `dvc pull` works for anyone with an Imperial HPC account and read access to that directory — currently restricted to the `hpc-ggorman` Unix group. If you don't have CX3 access, every file below is also available directly from its original public source (linked per-file), so a cold clone can still reproduce everything without going through this remote at all.
 
 ## F3 Seismic Volume
 - **File:** `Seismic_data.sgy`

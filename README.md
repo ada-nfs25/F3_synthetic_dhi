@@ -32,10 +32,14 @@ pip install -r requirements.txt
 dvc pull
 ```
 
-**Caveat:** the DVC remote (`.dvc/config`) is a local path inside this
-machine's synced Imperial College OneDrive folder, so `dvc pull` currently
-only works for someone with access to that same shared folder - not a cold
-clone from an arbitrary machine.
+**Access:** the DVC remote (`.dvc/config`) is this project's storage on
+Imperial's CX3 HPC cluster, reached over SSH
+(`ssh://.../rds/general/user/nfs25/home/dvc-storage`). CX3 doesn't support
+SSH key auth, so `dvc pull` will prompt for your own CX3 password. This
+works for anyone with an Imperial HPC account **and** read access to that
+directory - currently restricted to the `hpc-ggorman` Unix group. Everything
+in `data_raw/` is also available directly from its original public sources
+(see `data_raw/README.md`) if you don't have CX3 access.
 
 `data/*.pkl` are regeneratable local caches (trace geometry, horizon
 coordinate lookup) - gitignored, not checked in, rebuilt automatically by

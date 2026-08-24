@@ -1,4 +1,7 @@
 [core]
-    remote = storage
+    remote = rds
 ['remote "storage"']
     url = /Users/nfs25/Library/CloudStorage/OneDrive-ImperialCollegeLondon/dvc-storage
+['remote "rds"']
+    url = ssh://nfs25@login.cx3.hpc.imperial.ac.uk/rds/general/user/nfs25/home/dvc-storage
+    ask_password = true
