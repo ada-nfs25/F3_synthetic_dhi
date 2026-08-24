@@ -56,7 +56,14 @@ from src.dhi_pipeline.horizons import (  # noqa: E402
     HorizonSurface, build_coordinate_lookup, load_horizon_surface,
 )
 
-SPLITS = {'train': (150, 345), 'test': (365, 670)}
+SPLITS = {'train': (100, 345), 'test': (365, 670)}
+"""train's lower bound extended vs the H1/H3/dim_spot convention (150) into
+otherwise-unused survey inline range - measured directly: 100-150 has 99.8%
+depth-window validity (vs 90.4% for 150-345 alone), meaningfully more usable
+area for the same site-separation constraint. No site-disjointness risk:
+H1/H3/dim_spot never place anything in 100-150, and it stays outside test's
+range too. test's own unused edge (670-750) was checked and is WORSE
+(29.2% valid, not 37.1%), so left as the H1/H3/dim_spot convention."""
 IL_EXTENT = XL_EXTENT = 96
 TIME_EXTENT_MS = 500
 MIN_PATCH_SEPARATION = 70
@@ -75,7 +82,9 @@ CATALOG_PARAMS_BY_SPLIT = {
     # 28-candidate relief-aware pool couldn't find even one feasible site).
     # bright_spot still includes tiers 3-4 (TIER_PARAMS forces flat_spot=True
     # there, not configurable per-tier through this parameter).
-    'train': dict(n_dhi_per_tier=1, n_dim_spot_per_tier=0, n_flat_spot_only_per_tier=0, n_negatives_per_kind=2),
+    'train': dict(n_dhi_per_tier=2, n_dim_spot_per_tier=0, n_flat_spot_only_per_tier=0, n_negatives_per_kind=3),
+    # ceiling is somewhere between 20 (this) and 32 (fails) requested - not
+    # worth bisecting further for a marginal gain.
     # test's H3 grid sits systematically deeper than train's (mean 1.243s vs
     # 1.185s) - only ~37% of it falls inside dhi_lib's viable depth window,
     # vs ~90% for train (measured directly) - so its usable candidate area
