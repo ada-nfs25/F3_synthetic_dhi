@@ -57,6 +57,10 @@ from src.dhi_pipeline.horizons import (  # noqa: E402
 )
 
 SPLITS = {'train': (100, 345), 'test': (365, 670)}
+# Fixed per-split seeds, not hash(split_name): Python randomizes string hashing
+# per-process by default, so the old `hash(split_name) % (2**31)` drew a
+# different RNG stream on every run and made this script non-reproducible.
+SPLIT_SEEDS = {'train': 11, 'test': 22}
 """train's lower bound extended vs the H1/H3/dim_spot convention (150) into
 otherwise-unused survey inline range - measured directly: 100-150 has 99.8%
 depth-window validity (vs 90.4% for 150-345 alone), meaningfully more usable
@@ -194,7 +198,7 @@ def main():
             horizon_grid_s, valid_mask = build_horizon_grid_and_valid_mask(
                 horizon, inline_axis, xl_axis, depth_window_s)
 
-            rng = np.random.default_rng(hash(split_name) % (2**31))
+            rng = np.random.default_rng(SPLIT_SEEDS[split_name])
             catalog = plan_catalog(
                 horizon_grid_s, rng=rng, nt=n_time, dt_s=dt_s,
                 rc_gas=calib['rc_gas'], rc_brine=calib['rc_brine'],
