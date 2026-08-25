@@ -1,42 +1,85 @@
-# Raw Data
+# Raw data
 
-Raw inputs for the synthetic/real DHI extraction pipeline. DVC-tracked (`data_raw.dvc`), not committed to git directly. Get everything below with:
+This directory contains the upstream F3 inputs used by the synthetic/real
+DHI extraction pipeline. The large files are deliberately not committed to
+Git. Obtain them from the public sources listed below and place them at the
+exact paths shown.
 
-```bash
-dvc pull
+## Minimum inputs for the 1,208-example v2 experiment
+
+Only these files are needed to regenerate the H1 and H3 portions:
+
+```text
+data_raw/
+|-- Seismic_data.sgy
+|-- Velocity_functions.txt
+`-- horizons/
+    |-- H1.xyz
+    `-- H3.xyz
 ```
 
-**Access:** the DVC remote (`.dvc/config`) is this project's storage on Imperial's CX3 HPC cluster, reached over SSH with your own CX3 password (CX3 doesn't support SSH key auth). `dvc pull` works for anyone with an Imperial HPC account and read access to that directory — currently restricted to the `hpc-ggorman` Unix group. If you don't have CX3 access, every file below is also available directly from its original public source (linked per-file), so a cold clone can still reproduce everything without going through this remote at all.
+After placing those files, the trace-index cache can be built with:
 
-## F3 Seismic Volume
+```bash
+python scripts/build_f3_trace_index.py
+```
+
+The H1/H3 generation commands and pinned commits are documented in the
+repository's main `README.md`. The 201 dim-spot and 28 Aziz-style examples are
+not raw files in this directory: they are frozen, amplitude-only supplements
+downloaded and checksum-verified by:
+
+```bash
+python scripts/download_dim_spot_supplement.py
+python scripts/download_aziz_style_supplement.py
+```
+
+All derived attributes and scalar features are recomputed by this repository.
+The two supplement releases contain inputs to that computation, not stored
+feature tables or blind-test results.
+
+## F3 seismic volume
+
 - **File:** `Seismic_data.sgy`
 - **Source:** F3 Demo 2023, dGB Earth Sciences / TerraNubis, https://terranubis.com/datainfo/F3-Demo-2023
 - **Size:** 667MB
 - **Format:** SEG-Y
-- **Used by:** `synthetic_dhi_generation.ipynb`, `real_dhi_extraction.ipynb` (`SEGY_PATH`) — required, the seismic volume everything else is extracted/injected against.
+- **Used by:** H1/H3 regeneration scripts, trace-index construction, and the
+  synthetic/real extraction notebooks. This is a required functional input.
 
-## F3 Interpretation Labels — Horizons
+## F3 interpretation labels — horizons
+
 - **File:** `horizons.tar.gz` (extracts to `horizons/H1.xyz`...`H9.xyz`)
 - **Source:** Netherlands F3 Interpretation Dataset, Baroni et al. (2018), https://zenodo.org/records/1471548
 - **Size:** 95.3MB
 - **Format:** `.tar.gz`
-- **Used by:** `synthetic_dhi_generation.ipynb` (`HORIZON_PATH`, H1 only) — required, gives structural conformance for injection. A setup cell auto-extracts the archive into `data_raw/horizons/` on first run if not already extracted (gitignored, regeneratable from the tracked archive).
+- **Used by:** `scripts/regenerate_p0_dataset.py` uses `horizons/H1.xyz` and
+  `scripts/regenerate_p0_h3_shallow_dataset.py` uses `horizons/H3.xyz` to
+  make the injected anomalies structurally conformant. Extract the public
+  archive so these exact paths exist. The remaining horizons are not needed
+  for the frozen v2 experiment.
 
-## F3 Interpretation Labels — Masks
+## F3 interpretation labels — masks
+
 - **File:** `masks.tar.gz` (extracts to `masks/inline_*_mask.png`, `masks/crossline_*_mask.png`)
 - **Source:** same as horizons above
 - **Size:** 4.8MB
 - **Format:** `.tar.gz`
-- **Used by:** `synthetic_dhi_generation.ipynb` (`MASK_PATH`, `inline_400_mask.png` only) — used for a facies sanity-check print, not a functional input to `build_dataset()` itself (the window it validates, `T_LO`/`T_HI`, is a hardcoded literal). The notebook cell still errors without it though, so it's effectively required for a clean top-to-bottom run. Same auto-extraction as horizons.
+- **Used by:** the walkthrough notebook only, for a facies sanity check. Masks
+  are not inputs to the H1/H3 regeneration scripts or the frozen v2 result.
 
 ## Velocity functions
+
 - **File:** `Velocity_functions.txt`
 - **Source:** F3 Demo 2023, dGB Earth Sciences / TerraNubis (ships with the Rawdata package), https://terranubis.com/datainfo/F3-Demo-2023
 - **Size:** 2.9MB
 - **Format:** whitespace-delimited text (`cdp_x`, `cdp_y`, `time_ms`, `vrms`, `vint`, `vavg`, `depth_m`)
-- **Used by:** `synthetic_dhi_generation.ipynb` — required. Interpolated live to compute the `velocity_mps` value passed into `build_dataset()`; not a hardcoded constant, so this file has to be present to reproduce the same generation run.
+- **Used by:** the H1/H3 regeneration scripts and walkthrough notebook.
+  Interpolated at runtime to obtain the `velocity_mps` value passed to
+  `build_dataset()`; therefore this is a required functional input.
 
 ## AI (acoustic impedance) cube
+
 - **File:** `7a_AI_Cube_Std.cbvs`
 - **Source:** F3 Demo 2023, dGB Earth Sciences / TerraNubis, https://terranubis.com/datainfo/F3-Demo-2023
 - **Size:** 452MB
@@ -44,6 +87,7 @@ dvc pull
 - **Used by:** `synthetic_dhi_generation.ipynb` — exploratory only. One cell reads the first 64 bytes to confirm the format's magic number; the cube is never actually parsed or used downstream. Not a functional input to `build_dataset()`. Tracked anyway so the notebook runs top-to-bottom without erroring on that cell.
 
 ## Well logs
+
 - **Files:** `Well_data/F02-01_logs.las`, `Well_data/All_wells_RawData.zip`
 - **Source:** F3 Demo 2023, dGB Earth Sciences / TerraNubis, https://terranubis.com/datainfo/F3-Demo-2023
 - **Size:** 1.0MB + 1.5MB
@@ -51,10 +95,14 @@ dvc pull
 - **Used by:** `synthetic_dhi_generation.ipynb` — exploratory only. Used to compute naive sand/shale impedance contrasts, which informed early thinking on reflection coefficients but are never passed into `build_dataset()`. Not a functional input. Tracked anyway for the same top-to-bottom reason as the AI cube.
 
 ## Real shallow bright spot pick
+
 - **File:** `Shallow_Bright_Spot.pck`
 - **Source:** F3 Demo 2023 project's own OpendTect interpretation, expert-picked (not generated by this project), from `F3_Demo_2023/Locations/`
 - **Size:** 1.6KB
 - **Format:** OpendTect PickSet (polygon outline, 31 vertices)
-- **Used by:** `real_dhi_extraction.ipynb` — required. Reduced to a centroid and used to extract a single real patch, `real_brightspot_centroid.npz`, tracked separately in the companion `irp-nfs25` repo's `data.dvc`.
+- **Used by:** `real_dhi_extraction.ipynb` — required for that separate
+  real-example workflow. It is reduced to a centroid and used to extract
+  `real_brightspot_centroid.npz`; it is not part of the 1,208-example v2
+  synthetic dataset.
 
 **Note:** `Chimneys_yes.pck`/`Chimneys_no.pck` (also from the same `Locations/` folder) were previously used to extract a larger chimney/non-chimney real-example set, but that set was dropped after evaluation showed it wasn't useful — only the shallow bright spot pick above is still part of the pipeline.
