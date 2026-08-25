@@ -39,6 +39,7 @@ pyparsing==3.3.2
 python-dateutil==2.9.0.post0
 pytest==9.1.1
 pyzmq==27.1.0
+scikit-learn==1.8.0
 scipy==1.18.0
 segyio==1.9.14
 six==1.17.0
@@ -48,3 +49,4 @@ tornado==6.5.7
 traitlets==5.15.1
 typing_extensions==4.15.0
 wcwidth==0.8.1
+xgboost==3.3.0
