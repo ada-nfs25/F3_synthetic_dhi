@@ -96,14 +96,25 @@ def main():
         type=Path,
         default=DEFAULT_EXPECTED_PATH,
     )
+    parser.add_argument(
+        "--models-dir",
+        type=Path,
+        help=(
+            "directory containing the frozen model JSON files; defaults "
+            "to --artifacts-dir"
+        ),
+    )
     args = parser.parse_args()
 
     artifacts_dir = args.artifacts_dir.resolve()
+    models_dir = (
+        args.models_dir.resolve() if args.models_dir else artifacts_dir
+    )
     expected_path = args.expected.resolve()
     features_path = artifacts_dir / "v2_combined_features.parquet"
     predictions_path = artifacts_dir / "v2_loso_predictions.csv"
-    primary_model_path = artifacts_dir / PRIMARY_MODEL_NAME
-    secondary_model_path = artifacts_dir / SECONDARY_MODEL_NAME
+    primary_model_path = models_dir / PRIMARY_MODEL_NAME
+    secondary_model_path = models_dir / SECONDARY_MODEL_NAME
 
     required_paths = [
         expected_path,
