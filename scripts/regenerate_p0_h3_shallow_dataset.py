@@ -24,12 +24,12 @@ free, combining the two P0 diversity axes in one run.
 
 import argparse
 import json
-import pickle
 import sys
 from pathlib import Path
 
 import pandas as pd
 import segyio
+
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
@@ -43,7 +43,7 @@ from src.dhi_pipeline.horizons import (  # noqa: E402
     load_horizon_surface,
 )
 from src.dhi_pipeline.scenarios import FOOTPRINT_RADIUS_RANGE, TIER_RANGES  # noqa: E402
-from utils.seismic_io import read_inline  # noqa: E402
+from utils.seismic_io import load_or_build_trace_index, read_inline  # noqa: E402
 
 
 def calibration(segy_path, velocity_path, iline_map, xlines):
@@ -97,8 +97,10 @@ def main():
 
     raw = REPO / 'data_raw'
     segy_path = raw / 'Seismic_data.sgy'
-    with (REPO / 'data/f3_trace_index.pkl').open('rb') as fh:
-        index = pickle.load(fh)
+    index = load_or_build_trace_index(
+        segy_path,
+        REPO / 'data/f3_trace_index.pkl',
+    )
     iline_map, inlines, xlines = index['iline_map'], index['inlines'], index['xlines']
     dt_ms, velocity, dominant_freq = calibration(
         segy_path, raw / 'Velocity_functions.txt', iline_map, xlines,

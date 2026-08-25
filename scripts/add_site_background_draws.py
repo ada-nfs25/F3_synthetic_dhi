@@ -17,7 +17,6 @@ this can be re-run/extended without disturbing the original draws.
 
 import argparse
 import json
-import pickle
 import sys
 from pathlib import Path
 
@@ -31,6 +30,7 @@ sys.path.insert(0, str(REPO))
 from src.dhi_pipeline.dataset import _read_subvolume, generate_example  # noqa: E402
 from src.dhi_pipeline.horizons import HorizonSurface, build_coordinate_lookup, load_horizon_surface  # noqa: E402
 from src.dhi_pipeline.scenarios import FOOTPRINT_RADIUS_RANGE  # noqa: E402
+from utils.seismic_io import load_or_build_trace_index  # noqa: E402
 
 # matches the anomaly footprint's own max radius (FOOTPRINT_RADIUS_RANGE[1]) -
 # a background jittered any further could drift outside the site's own local
@@ -72,8 +72,10 @@ def main():
 
     raw = REPO / 'data_raw'
     segy_path = raw / 'Seismic_data.sgy'
-    with (REPO / 'data/f3_trace_index.pkl').open('rb') as fh:
-        index = pickle.load(fh)
+    index = load_or_build_trace_index(
+        segy_path,
+        REPO / 'data/f3_trace_index.pkl',
+    )
     iline_map, inlines, xlines = index['iline_map'], index['inlines'], index['xlines']
 
     coords = build_coordinate_lookup(str(segy_path))

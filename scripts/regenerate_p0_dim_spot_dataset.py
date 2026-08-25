@@ -17,7 +17,6 @@ regardless of which positive kind happens to share its site), so generating
 new ones here would be redundant.
 """
 import json
-import pickle
 import shutil
 import sys
 import warnings
@@ -35,6 +34,7 @@ from src.dhi_pipeline.horizons import (  # noqa: E402
     HorizonSurface, build_coordinate_lookup, find_structural_highs, load_horizon_surface,
 )
 from src.dhi_pipeline.injection import RC_GAS_SAND, RC_WATER_SAND, V_GAS_SAND, wedge_peak_amplitude  # noqa: E402
+from utils.seismic_io import load_or_build_trace_index  # noqa: E402
 
 N_PER_TIER_PER_SPLIT = 15
 SPLITS = {'train': (150, 345), 'test': (365, 670)}
@@ -74,8 +74,10 @@ def main():
     tuning_thickness_s = 2 * tuning_thickness_m / velocity_mps
     print(f'empirical tuning thickness: {tuning_thickness_m:.2f}m ({tuning_thickness_s * 1000:.2f}ms TWT)')
 
-    with (REPO / 'data/f3_trace_index.pkl').open('rb') as fh:
-        index = pickle.load(fh)
+    index = load_or_build_trace_index(
+        segy_path,
+        REPO / 'data/f3_trace_index.pkl',
+    )
     iline_map, inlines, xlines = index['iline_map'], index['inlines'], index['xlines']
     coords = build_coordinate_lookup(str(segy_path))
 
