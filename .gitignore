@@ -15,4 +15,11 @@ data/F3_synthetic_dhi_dataset*/
 external/
 # Reverse-leg blind exchange: private answer key + large .sgy files
 data/round2_reverse_leg/
-data/v2_features/
+# Round 3 blind exchange: private answer key + large .sgy files
+data/round3_blind_volume/
+# v2_features/ holds large feature caches (gitignored) but the frozen
+# model files themselves are small enough to commit directly
+data/v2_features/*
+!data/v2_features/xgboost_dhi_14feature_v2.json
+!data/v2_features/xgboost_dhi_14feature_v1style_secondary.json
+data/release_build/
