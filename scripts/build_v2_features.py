@@ -47,6 +47,14 @@ DATASETS = {
     'dim_spot': 'F3_synthetic_dhi_dataset_p0_dim_spot',
     'aziz_style': 'F3_synthetic_dhi_dataset_p0_aziz_style',
 }
+
+EXPECTED_COUNTS = {
+    'H1': 683,
+    'H3': 296,
+    'dim_spot': 201,
+    'aziz_style': 28,
+}
+
 OUT_DIR = REPO / 'data' / 'v2_features'
 FEATURES_CACHE_PATH = OUT_DIR / 'ratio_features_v2_cache.parquet'
 CACHE_KEY_PATH = OUT_DIR / 'ratio_features_v2_cache_key.json'
@@ -66,6 +74,33 @@ def load_combined_labels():
         frames.append(labels)
     combined = pd.concat(frames, ignore_index=True, sort=False)
 
+    actual_counts = {
+    key: int(value)
+    for key, value in combined.groupby('dataset_source').size().items()
+    }
+    
+    if actual_counts != EXPECTED_COUNTS:
+        raise RuntimeError(
+            f'Dataset count mismatch: expected {EXPECTED_COUNTS}, '
+            f'got {actual_counts}'
+        )
+
+    if len(combined) != 1208:
+        raise RuntimeError(f'Expected 1208 combined examples, got {len(combined)}')
+
+    if not combined['global_id'].is_unique:
+        raise RuntimeError('Combined dataset contains duplicate global_id values')
+
+    missing_patches = [
+        path for path in combined['patch_path']
+        if not Path(path).is_file()
+    ]
+    if missing_patches:
+        preview = missing_patches[:5]
+        raise RuntimeError(
+            f'{len(missing_patches)} referenced patches are missing; '
+            f'first examples: {preview}'
+        )
     # site identity for LOSO grouping: the true structural site where tracked
     # (H1's later jittered background draws), else the row's own centre - see
     # module docstring / irp-nfs25 notebook's site_id construction, which this
@@ -92,9 +127,25 @@ def compute_patch_features(patch_path):
     was measured on the thin-bed-only training set... re-evaluate on the
     diversified set from P0, not the old one").
     """
-    data = np.load(patch_path)
-    amplitude = data['attribute_stack'][list(data['channel_names']).index('amplitude')]
+    with np.load(patch_path) as data:
+        if 'amplitude' in data.files:
+            amplitude = np.asarray(data['amplitude'], dtype=np.float32)
+        elif {'attribute_stack', 'channel_names'} <= set(data.files):
+            channel_names = list(data['channel_names'])
+            amplitude = np.asarray(
+                data['attribute_stack'][channel_names.index('amplitude')],
+                dtype=np.float32,
+            )
+        else:
+            raise ValueError(f'No amplitude array found in {patch_path}')
 
+    if amplitude.shape != (96, 96, 125):
+        raise ValueError(
+            f'Unexpected amplitude shape {amplitude.shape} in {patch_path}'
+        )
+    if not np.isfinite(amplitude).all():
+        raise ValueError(f'Non-finite amplitude values in {patch_path}')
+    
     stack, channel_names = compute_attribute_stack(amplitude, dt_s=0.004)
     v2_features = ratio_features_from_stack(stack, channel_names)
 
