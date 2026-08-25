@@ -1,0 +1,48 @@
+{
+  "experiment_id": "p0-diversified-xgboost-v2",
+  "examples": 1208,
+  "source_counts": {
+    "H1": 683,
+    "H3": 296,
+    "aziz_style": 28,
+    "dim_spot": 201
+  },
+  "positives": 627,
+  "negatives": 581,
+  "sites": 164,
+  "feature_names": [
+    "envelope_mean_near_top_ratio",
+    "envelope_p90_near_top_ratio",
+    "envelope_maxabs_near_top_ratio",
+    "sweetness_mean_near_top_ratio",
+    "sweetness_p90_near_top_ratio",
+    "sweetness_maxabs_near_top_ratio",
+    "inst_freq_mean_near_top_ratio",
+    "inst_freq_p90_near_top_ratio",
+    "inst_freq_maxabs_near_top_ratio",
+    "band_ratio_mean_near_top_ratio",
+    "band_ratio_p90_near_top_ratio",
+    "band_ratio_maxabs_near_top_ratio",
+    "doublet_autocorrelation",
+    "signed_polarity"
+  ],
+  "metric_absolute_tolerance": 1e-12,
+  "primary_loso": {
+    "roc_auc": 0.7553783143510474,
+    "pr_auc": 0.7261646668201447,
+    "recall": 0.7910685805422647,
+    "precision": 0.6739130434782609,
+    "f1": 0.7278063096111519
+  },
+  "secondary_loso": {
+    "roc_auc": 0.7655323961601705,
+    "pr_auc": 0.7528109018450134,
+    "recall": 0.7799043062200957,
+    "precision": 0.6791666666666667,
+    "f1": 0.7260579064587973
+  },
+  "model_sha256": {
+    "primary": "cd6eb04b1a133b0c50e78a1459f4ed5ad43808a831ab5a0a051c69ef841150f5",
+    "secondary": "5d8a243715174b9c20897541e578afce285a1a84c140ab17ceca88bb5e97b3d0"
+  }
+}
