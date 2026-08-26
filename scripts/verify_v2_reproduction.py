@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Verify the regenerated 1208-example v2 experiment against frozen results."""
 
 import argparse

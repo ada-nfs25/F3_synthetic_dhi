@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Build the regeneratable F3 SEG-Y trace-index cache."""
 
 import argparse

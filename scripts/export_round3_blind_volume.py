@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """
 Round 3 blind set (your side of the swap: you inject into your reserved
 hold-out, Aziz detects with his frozen primary/secondary, you score).

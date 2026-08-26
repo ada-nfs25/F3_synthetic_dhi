@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """
 Score Aziz's round-2 blind patch set with BOTH frozen models - the
 pre-registered primary (v2: P0-diversified data, P1-fixed features -

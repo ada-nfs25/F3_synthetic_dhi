@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Export the frozen Aziz-style subset as an amplitude-only supplement.
 
 This exports generated outputs only. It does not distribute the collaborator's

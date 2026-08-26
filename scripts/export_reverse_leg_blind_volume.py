@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Export the blind volume for the reverse leg (Aziz's ask #3, ROUND2_PLAN.md's
 "what to send back" list) - Aziz runs his detector on this, no answers revealed
 on this side, doesn't wait for v2.

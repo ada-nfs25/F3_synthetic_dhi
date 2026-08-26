@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Regenerate the agreed P0 dataset and validate its contract.
 
 The P0 dataset includes:

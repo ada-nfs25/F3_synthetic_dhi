@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """
 Export the combined P0 dataset (H1 + H3 + dim_spot + aziz_style, 1208
 examples) as amplitude-only patches - raw seismic amplitude + ground truth

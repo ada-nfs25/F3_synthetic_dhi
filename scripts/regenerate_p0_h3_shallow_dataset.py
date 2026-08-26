@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Generate a shallow-depth-band diversity supplement on horizon H3 - Aziz's
 round-2 plan (ROUND2_PLAN.md P0 item 1): "inject across multiple horizons/
 depth bands, including a shallow band (~1000-1250ms) matching the round-1

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Add extra background patches per site for the site-identity diagnostic.
 
 17 background observations for 17 site classes can't support a site-ID classifier. This draws several more

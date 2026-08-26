@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Export the small, sanitised golden artifacts for quick v2 verification."""
 
 import shutil

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Run the frozen 14-feature XGBoost detector on Aziz's blind patch batch.
 
 Reads raw amplitude directly from each anonymized SEG-Y patch (headers give

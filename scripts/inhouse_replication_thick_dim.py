@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """In-house replication of round 1's two suspected failure modes on our own
 F3 volume, scored with the frozen v1 detector - Aziz's round-2 plan (see
 share_nora_round2/ROUND2_PLAN.md P0)'s "one cheap confirmation worth an

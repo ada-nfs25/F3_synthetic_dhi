@@ -1,3 +1,4 @@
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Tests for scripts/score_blind_round1.py (round-one blind scoring).
 
 The scoring script is the LAST code between her detections and the numbers

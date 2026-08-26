@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Download and verify the frozen 28-example Aziz-style supplement."""
 
 import argparse

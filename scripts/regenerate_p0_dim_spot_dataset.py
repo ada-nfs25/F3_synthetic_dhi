@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Generate dim_spot positive examples - Aziz's round-2 plan (ROUND2_PLAN.md
 P0 item 3): "brightness-correlated features ... need counter-examples where
 the anomaly is an amplitude decrease."

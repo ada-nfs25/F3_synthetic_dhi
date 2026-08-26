@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """
 P2: LOSO-evaluate and fit XGBoost v2 on the P0-diversified dataset
 (H1 + H3 + dim_spot), comparing v1's original feature definitions against

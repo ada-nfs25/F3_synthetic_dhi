@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """
 P2: combine the P0-diversified datasets (H1, H3, dim_spot) and compute the
 v2 feature set fresh from each patch's raw amplitude.

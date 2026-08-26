@@ -95,3 +95,9 @@ Two routes are available:
 
 See [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for the complete commands,
 expected output, public data requirements, and testing status of each route.
+
+## AI assistance
+
+Claude Code assisted with implementation and documentation throughout this
+repository. See [AI_USAGE.md](AI_USAGE.md) for the complete scope and
+attribution.

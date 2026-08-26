@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Export the frozen dim-spot subset as an amplitude-only supplement."""
 
 import json

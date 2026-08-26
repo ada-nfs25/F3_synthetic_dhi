@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """
 P0 item 4 (Aziz, ROUND2_PLAN.md): "our injection library is in the bundle...
 so you can generate our-style examples on your own volume - same physics

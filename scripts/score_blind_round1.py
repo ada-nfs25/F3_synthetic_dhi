@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """
 Patch-level blind-test scoring, reimplemented from Aziz's shared test suite
 (~/Downloads/share_nora_round2/tests/test_score_blind_round1.py) rather than

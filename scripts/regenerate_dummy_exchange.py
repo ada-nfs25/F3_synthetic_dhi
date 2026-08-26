@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Implementation developed with AI (Claude Code) assistance - see AI_USAGE.md.
 """Regenerate the dummy C5 blind-exchange file + detection record.
 
 The original blind_0000.sgy/blind_0000_detection.json predate two later

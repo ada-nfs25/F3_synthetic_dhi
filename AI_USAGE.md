@@ -11,50 +11,62 @@ Synthetic injection provides the volume and the severity continuum those real ex
 can't. This repository is not itself the graded IRP submission (`irp-nfs25`); its
 outputs (the synthetic dataset) feed into that project.
 
+This repository has also grown, over the P0-P2 round of work described in
+`blind_tests.md`, to contain a second DHI detector: a 14-feature ratio-based
+XGBoost classifier (`ratio_features.py`, `calibration.py`, and the
+`scripts/build_v2_features.py` / `train_xgb_v2.py` / `score_*.py` /
+`run_blind_predictions.py` pipeline) used for cross-generator blind-exchange
+testing with a collaborator. This is distinct from - and much smaller than -
+the ~20-attribute detector in `irp-nfs25` described in the scope note below.
+
 ## Tool used
 
-**Claude Code** (Claude Sonnet 5), by Anthropic (https://claude.com/claude-code) - used
-as the primary implementation tool throughout this repository's development: writing
-and modifying the injection pipeline, dataset generation, attribute computation, the
-test suite, debugging, and the fixes/write-up documents in this repo.
+**Claude Code** (Claude Sonnet 5), by Anthropic
+(https://claude.com/claude-code) - used as the primary implementation and debugging
+tool throughout this repository's development.
 
 **Scope note:** "attribute computation" here means only `attributes.py`'s 8-channel
 `compute_attribute_stack` (envelope, instantaneous phase/frequency, RMS amplitude,
 sweetness, band ratio, local variance), which feeds the exported synthetic dataset. This
-is separate from and much smaller than the ~20-attribute library used for detection
-(coherence, spectral bandwidth, GLCM texture, dip magnitude, apparent polarity, etc.),
-which lives in `irp-nfs25` and was implemented by me.
+is separate from and much smaller than the ~20-attribute library used for `irp-nfs25`'s
+own detector (coherence, spectral bandwidth, GLCM texture, dip magnitude, apparent
+polarity, etc.), which lives there and was designed, evaluated, and interpreted by the
+author, with implementation assistance disclosed in that repository's `AI_USAGE.md`.
+It's also separate from this repo's own 14-feature ratio-based detector (see above) -
+`compute_attribute_stack` is an upstream input to that detector's features, not the
+detector itself.
 
-## What was AI-implemented vs. mine
+## Scope of AI assistance
 
-Consistent with guidance confirmed by the IRP course leader Marijan Beg (AI-generated synthetic
-training data is a permitted project input provided the design and validation are the
-student's own intellectual contribution, and the AI is used as an implementation tool
-rather than a source of decisions):
+Consistent with guidance confirmed by the IRP course leader Marijan Beg, AI-generated
+synthetic training data is a permitted project input provided the design and validation
+are the student's own intellectual contribution and AI is used as an implementation
+tool rather than a source of decisions.
 
-**AI-implemented (Claude Code):** the Python implementation in `src/dhi_pipeline/` and
-`tests/` - wedge-model construction, the flat-spot/polarity-reversal/sag injection
-mechanics, dataset generation and caching, attribute computation, SEG-Y export, and the
-pytest regression suite. Also used for debugging (e.g. diagnosing OneDrive sync/
-dehydration issues, a per-scenario crash exposed by the F4 footprint change) and for
-drafting the fixes/write-up documents (`fixes-*.md`) from my findings and decisions.
+Claude Code assisted with all authored Python implementation under `scripts/`,
+`src/dhi_pipeline/`, `tests/`, and `utils/`. This includes the injection pipeline,
+dataset generation and caching, attribute computation, calibration, ratio-feature
+extraction, model training, blind scoring, SEG-Y and supplement export, download and
+verification utilities, and the regression test suite. Claude Code also assisted with
+debugging, all three notebooks, and the authored Markdown documentation in this
+repository. Generated datasets, model files, prediction tables, and figures are outputs
+of these workflows rather than authored source material.
 
-**My own intellectual contribution:** the choice to model DHIs via a wedge-tuning
-approach at all; which physical effects to include (flat spot, polarity reversal, sag/
-pull-down) and why, grounded in the DHI literature (e.g. Nanda 2021); calibrating
-reflection coefficients from real F3 well logs rather than accepting illustrative
-defaults (including catching and fixing a coal-contamination bug and a units mismatch in
-that calibration myself); the severity-tier design and thresholds; deciding what counts
-as a legitimate hard negative and why (`no_conformance`, `syncline`, `single_reflector`,
-`tuning`) rather than accepting a generic negative-sampling scheme; reviewing, running,
-and interpreting every fix against the colleague pipeline review, including
-independently reproducing the review's own numerical checks rather than taking them on
-trust; the F4 footprint-scale decision and its trade-offs; the decision (and the
-reasoning behind it, verified via grouped cross-validation) to revert the detector
-feature set from 24 back to 12 features; and all correspondence, decisions, and
-judgement calls made with my collaborator (Aziz) and supervisor throughout.
+**OpenAI Codex** (GPT-5), by OpenAI (https://openai.com/codex/) - used to audit
+this repository for missing AI acknowledgements and to help structure this updated
+AI-usage disclosure. Codex was not used to implement the scientific pipeline or
+detector code in this repository.
 
-I reviewed and verified all AI-implemented code before accepting it, and can
-explain the functionality of every component. The git commit history of this repository
-records the iterative process in detail (commit messages describe what changed and why
-for each step).
+## Role of the author
+
+Claude Code was used as an implementation and debugging tool. The project's research
+question, scientific design, methodological choices, experimental protocols, and
+interpretation of results were determined by the author. The author reviewed, ran, and
+tested the AI-assisted implementation, decided which changes and results to accept or
+reject, and can explain the functionality and reasoning behind every submitted
+component.
+
+Collaboration with supervisors and Aziz informed the work, but the author remained
+responsible for the project decisions, validation, and conclusions. Despite the
+assistance described above, the submitted work is the author's own. The git history
+records the iterative development and evaluation process.
