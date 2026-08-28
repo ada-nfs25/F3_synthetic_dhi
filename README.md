@@ -61,14 +61,24 @@ intellectual contribution.
   `compute_attribute_stack`).
 
 ## Detector development (P0-P2) and blind-exchange testing
+
 Working with a collaborator (Aziz) doing an independent DHI-detection
-project on a different F3 region, this repo went through several rounds of
-cross-generator blind testing (round 1: frozen v1 detector on his blind set,
-0.643 ROC-AUC vs. 0.820 internal LOSO; P0-P2: diversified the training data
-to 1208 examples across H1/H3/dim_spot/aziz-style sources and fixed feature
-bugs; round 2: pre-registered blind exchange, both directions - see
-`blind_tests.md` for the full numbered history, not reproduced here). Round
-3 (union-of-domains training + LODO validation) is in progress.
+project on a different F3 region, this repository went through three rounds
+of cross-generator blind testing. Round 1 measured 0.643 ROC-AUC for the
+frozen v1 detector on his blind set, compared with 0.820 in-house LOSO.
+P0-P2 then diversified the training corpus to 1,208 examples across
+H1/H3/dim-spot/Aziz-style sources and introduced the primary feature fixes
+plus a v1-style secondary ablation.
+
+Round 3 separated two tests on the same 32-patch H6 blind set. The already
+frozen models provided an explicitly out-of-coverage extrapolation result:
+primary/secondary ROC-AUC 0.413/0.433. After six H6 training volumes were
+generated outside the disclosed union of blind-patch footprints, the
+coverage-extended frozen models scored 0.450/0.450. These blind results are
+separate from the in-house 1,208-example LOSO evaluation reproduced by
+`REPRODUCIBILITY.md`; its recorded primary/secondary ROC-AUC values are
+0.755378/0.765532. Blind predictions were returned before the private labels
+were used for scoring.
 
 ## Data dependencies
 The required F3 Demo 2023 SEG-Y volume, interpretation horizons, and velocity
@@ -95,6 +105,12 @@ Two routes are available:
 
 See [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for the complete commands,
 expected output, public data requirements, and testing status of each route.
+
+## Human collaboration
+
+Mohamed Aziz Ketata served as the independent second party in all blind-test
+exchanges. Ground-truth labels were withheld until frozen predictions had been
+returned, preserving the independence of the evaluation.
 
 ## AI assistance
 
