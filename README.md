@@ -1,5 +1,8 @@
 # F3 Synthetic DHI Generator
 
+End-to-end ML project for detecting subsurface anomalies in 3D seismic data.
+I built the data generation, feature engineering, training, evaluation and reproducibility pipeline in Python, using Claude Code extensively as a development tool. The project includes automated tests, reproducible workflows and independent blind testing.
+
 AI-assisted (Claude) pipeline for generating synthetic Direct Hydrocarbon
 Indicator (DHI) examples on the F3 Demo seismic dataset, plus the DHI
 detection model (feature extraction, XGBoost training, blind-test scoring)
